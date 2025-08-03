@@ -143,7 +143,3 @@ if match and match_data.get("round") == 2:
         st.success(f"🎯 Period 2 Outcome: P1 = {p1_2}, P2 = {p2_2} → Payoffs = {payoff_matrix[p1_2][p2_2]}")
         total_p1 = match_data.get("p1_payoff", 0) + payoff_matrix[p1_2][p2_2][0]
         total_p2 = match_data.get("p2_payoff", 0) + payoff_matrix[p1_2][p2_2][1]
-st.markdown(f"""### 🧾 Final Payoffs:"""
-- Player 1: {total_p1}
-- Player 2: {total_p2}")
-        match_ref.child("done").set(True)
