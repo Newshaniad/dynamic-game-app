@@ -165,13 +165,28 @@ if st.session_state.get("go_to_period2", False):
         st.success("✅ Your Period 2 choice has been submitted!")
 
     # Wait for both submissions
-    submitted2 = game_ref2.get()
-    if submitted2 and "Player 1" in submitted2 and "Player 2" in submitted2:
-        action1_2 = submitted2["Player 1"]["action"]
-        action2_2 = submitted2["Player 2"]["action"]
-        payoff2 = payoff_matrix[action1_2][action2_2]
+    # Period 2: Wait for both players to submit
+with st.spinner("⏳ Waiting for the other player to submit their action in Period 2..."):
+    max_wait = 10  # seconds
+    for _ in range(max_wait):
+        submitted2 = game_ref2.get()
+        if submitted2 and "Player 1" in submitted2 and "Player 2" in submitted2:
+            action1_2 = submitted2["Player 1"]["action"]
+            action2_2 = submitted2["Player 2"]["action"]
 
-        st.success(f"🎯 Period 2 Outcome: P1 = {action1_2}, P2 = {action2_2} → Payoffs = {payoff2}")
+            payoff_matrix = {
+                "A": {"X": (4, 3), "Y": (0, 0), "Z": (1, 4)},
+                "B": {"X": (0, 0), "Y": (2, 1), "Z": (0, 0)}
+            }
+            payoff2 = payoff_matrix[action1_2][action2_2]
+
+            st.success(f"🎯 Period 2 Outcome: P1 = {action1_2}, P2 = {action2_2} → Payoffs = {payoff2}")
+            st.balloons()
+            st.markdown("✅ **Game Complete!** Thanks for playing.")
+            break
+        time.sleep(1)
+    else:
+        st.warning("⌛ The other player hasn't submitted their Period 2 action yet. Please wait and refresh.")
         st.balloons()
 
         st.markdown("✅ **Game Complete!** Thanks for playing.")
