@@ -85,3 +85,65 @@ if name:
                             st.success(f"🎮 Hello, {name}! You are {role} in match {match_id}")
                             st.rerun()
                     time.sleep(2)
+
+
+
+# Define actions
+actions_p1 = ["A", "B"]
+actions_p2 = ["X", "Y", "Z"]
+payoff_matrix = {
+    ("A", "X"): (4, 3), ("A", "Y"): (0, 0), ("A", "Z"): (1, 4),
+    ("B", "X"): (0, 0), ("B", "Y"): (2, 1), ("B", "Z"): (0, 0),
+}
+
+match_ref = db.reference(f"matches/{match_id}")
+game_state = match_ref.get() or {}
+
+# Period 1
+if "period1" not in game_state:
+    st.subheader("🎮 Period 1: Make your choice")
+    if role == "P1":
+        choice = st.radio("Choose your action:", actions_p1, key="p1_period1")
+    else:
+        choice = st.radio("Choose your action:", actions_p2, key="p2_period1")
+
+    if st.button("Submit Period 1 Choice"):
+        match_ref.child("period1").child(role).set(choice)
+        st.success("✅ Choice submitted. Waiting for your opponent...")
+
+    # Check if both choices are in
+    pdata = match_ref.child("period1").get()
+    if pdata and "P1" in pdata and "P2" in pdata:
+        p1_choice = pdata["P1"]
+        p2_choice = pdata["P2"]
+        outcome = payoff_matrix[(p1_choice, p2_choice)]
+        match_ref.child("period1").child("payoff").set(outcome)
+        st.success(f"🎯 Period 1 Outcome: P1 = {p1_choice}, P2 = {p2_choice} → Payoffs = {outcome}")
+        st.rerun()
+
+# Period 2
+elif "period2" not in game_state:
+    st.subheader("🎮 Period 2: Based on Period 1 outcome")
+    last_choices = game_state["period1"]
+    if "payoff" in last_choices:
+        outcome = last_choices["payoff"]
+        st.info(f"📊 Period 1: P1 = {last_choices['P1']}, P2 = {last_choices['P2']} → Payoffs = {outcome}")
+
+    if role == "P1":
+        choice = st.radio("Choose your action:", actions_p1, key="p1_period2")
+    else:
+        choice = st.radio("Choose your action:", actions_p2, key="p2_period2")
+
+    if st.button("Submit Period 2 Choice"):
+        match_ref.child("period2").child(role).set(choice)
+        st.success("✅ Period 2 choice submitted. Waiting for opponent...")
+
+    # Show results if both submitted
+    pdata = match_ref.child("period2").get()
+    if pdata and "P1" in pdata and "P2" in pdata:
+        p1_choice = pdata["P1"]
+        p2_choice = pdata["P2"]
+        outcome = payoff_matrix[(p1_choice, p2_choice)]
+        match_ref.child("period2").child("payoff").set(outcome)
+        st.success(f"🎯 Period 2 Outcome: P1 = {p1_choice}, P2 = {p2_choice} → Payoffs = {outcome}")
+        st.balloons()
