@@ -85,3 +85,51 @@ if name:
                             st.success(f"🎮 Hello, {name}! You are {role} in match {match_id}")
                             st.rerun()
                     time.sleep(2)
+
+# --- PERIOD 1 CHOICE ---
+match_ref = db.reference(f"matches/{match_id}")
+actions_ref = match_ref.child("period1_actions")
+
+player_action = actions_ref.child(name).get()
+
+if not player_action:
+    st.subheader("🎮 Period 1: Make your move")
+    
+    if role == "P1":
+        move = st.radio("Choose your action (Player 1):", ["A", "B"])
+    else:
+        move = st.radio("Choose your action (Player 2):", ["X", "Y", "Z"])
+
+    if st.button("Submit Move"):
+        actions_ref.child(name).set(move)
+        st.success("✅ Move submitted. Waiting for other player...")
+        st.rerun()
+else:
+    st.info("✅ You submitted your move. Waiting for your opponent...")
+
+# Check if both moves submitted
+actions = actions_ref.get()
+if actions and len(actions) == 2:
+    p1_move = actions.get(player1)
+    p2_move = actions.get(player2)
+
+    # PAYOFF LOGIC
+    payoff_matrix = {
+        "A": {"X": (4, 3), "Y": (0, 0), "Z": (1, 4)},
+        "B": {"X": (0, 0), "Y": (2, 1), "Z": (0, 0)},
+    }
+
+    p1_payoff, p2_payoff = payoff_matrix[p1_move][p2_move]
+
+    st.success(f"🎯 Period 1 Result: P1 = {p1_move}, P2 = {p2_move} → Payoffs = ({p1_payoff}, {p2_payoff})")
+
+    # Store result for Period 2 reference
+    match_ref.child("period1_result").set({
+        "p1_move": p1_move,
+        "p2_move": p2_move,
+        "p1_payoff": p1_payoff,
+        "p2_payoff": p2_payoff
+    })
+
+    st.button("🔁 Continue to Period 2", on_click=st.rerun)
+
