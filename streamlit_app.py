@@ -5,6 +5,7 @@ import firebase_admin
 from firebase_admin import credentials, db
 import json
 import time
+from datetime import datetime, timedelta
 
 # --- Firebase Setup ---
 if not firebase_admin._apps:
@@ -45,9 +46,23 @@ for key in ["name", "role", "pair_id", "round", "submitted", "choice"]:
 name = st.text_input("Enter your name to join the game:")
 if name and not st.session_state.name:
     st.session_state.name = name
-    db.reference(f"players/{name}").set({"joined": True, "paired": False})
+    now = datetime.utcnow().isoformat()
+    db.reference(f"players/{name}").set({"joined": True, "paired": False, "timestamp": now})
 
-# --- Pair Players ---
+# --- Cleanup stale players (older than 5 min) ---
+players = db.reference("players").get() or {}
+now = datetime.utcnow()
+for pname, pdata in players.items():
+    ts = pdata.get("timestamp")
+    if ts:
+        try:
+            joined_time = datetime.fromisoformat(ts)
+            if now - joined_time > timedelta(minutes=5):
+                db.reference(f"players/{pname}").delete()
+        except Exception:
+            db.reference(f"players/{pname}").delete()
+
+# --- Refresh players after cleanup ---
 players = db.reference("players").get() or {}
 pairs = db.reference("pairs").get() or {}
 
@@ -65,19 +80,15 @@ for pid, p in pairs.items():
 
 # Pair new players
 if not found_pair:
-    unpaired = [p for p in players if not players[p].get("paired")]
-    if len(unpaired) >= 2:
-        p1, p2 = random.sample(unpaired, 2)
-        pair_id = f"{p1}_vs_{p2}"
-        db.reference(f"pairs/{pair_id}").set({"P1": p1, "P2": p2})
-        db.reference(f"players/{p1}/paired").set(True)
-        db.reference(f"players/{p2}/paired").set(True)
-        if name == p1:
-            st.session_state.pair_id = pair_id
-            st.session_state.role = "P1"
-        elif name == p2:
-            st.session_state.pair_id = pair_id
-            st.session_state.role = "P2"
+    unpaired = [p for p in players if not players[p].get("paired") and p != name]
+    if unpaired:
+        partner = unpaired[0]
+        pair_id = f"{partner}_vs_{name}"
+        db.reference(f"pairs/{pair_id}").set({"P1": partner, "P2": name})
+        db.reference(f"players/{partner}/paired").set(True)
+        db.reference(f"players/{name}/paired").set(True)
+        st.session_state.pair_id = pair_id
+        st.session_state.role = "P2"
 
 if not st.session_state.pair_id:
     st.info("⏳ Waiting for another player to join...")
