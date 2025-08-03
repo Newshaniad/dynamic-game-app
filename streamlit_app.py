@@ -1,144 +1,115 @@
 
 import streamlit as st
-import random
 import firebase_admin
 from firebase_admin import credentials, db
-import json
+import random
 import time
-from datetime import datetime, timedelta
+import json
+from datetime import datetime
 
-# --- Firebase Setup ---
-if not firebase_admin._apps:
-    cred = credentials.Certificate(json.loads(st.secrets["firebase_key"]))
-    firebase_admin.initialize_app(cred, {
-        'databaseURL': st.secrets["database_url"]
-    })
+# Game setup
+GAME_DESCRIPTION = '''
+### 🎲 2-Period Dynamic Game
+Players are randomly matched and play a 2-stage game.
 
-# --- Game Description ---
-st.title("🎲 Multiplayer 2-Period Dynamic Game")
+#### Payoff Matrix (Player 1, Player 2)
+|       | X       | Y       | Z       |
+|-------|---------|---------|---------|
+| **A** | (4, 3)  | (0, 0)  | (1, 4)  |
+| **B** | (0, 0)  | (2, 1)  | (0, 0)  |
+'''
 
-st.markdown("""
-### 🧠 Game Instructions
+payoffs = {
+    "A": {"X": (4, 3), "Y": (0, 0), "Z": (1, 4)},
+    "B": {"X": (0, 0), "Y": (2, 1), "Z": (0, 0)},
+}
 
-You are matched with another player for **2 rounds**.
-Each round, both players **choose at the same time**.
+# Firebase setup using secrets
+cred = credentials.Certificate(json.loads(st.secrets["firebase_key"]))
+firebase_admin.initialize_app(cred, {
+    'databaseURL': st.secrets["database_url"]
+})
+ref = db.reference("/dynamic_game")
 
-After round 1, you'll **see your combined result**, and then you’ll play round 2 with the same player.
+# UI
+st.title("🎮 Multiplayer 2-Stage Game")
+st.markdown(GAME_DESCRIPTION)
 
-Your choices will determine your **payoff**, based on the table below.
-""")
+player_name = st.text_input("Enter your name to join the game:")
+if player_name:
+    player_ref = ref.child("players").child(player_name)
+    player_data = player_ref.get()
 
-st.markdown("""
-### 📊 Payoff Matrix (Player 1, Player 2)
+    if not player_data:
+        player_ref.set({
+            "joined": True,
+            "timestamp": time.time(),
+            "choice1": None,
+            "choice2": None,
+            "role": None,
+            "partner": None
+        })
+        st.success(f"👋 Welcome, {player_name}!")
 
-|           | **X**      | **Y**      | **Z**      |
-|-----------|------------|------------|------------|
-| **A**     | (4, 3)     | (0, 0)     | (1, 4)     |
-| **B**     | (0, 0)     | (2, 1)     | (0, 0)     |
-""")
+    # Matchmaking
+    players = ref.child("players").get()
+    waiting = [p for p, pdata in players.items() if isinstance(pdata, dict) and pdata.get("partner") is None]
 
-# --- Session State ---
-for key in ["name", "role", "pair_id", "round", "submitted", "choice"]:
-    if key not in st.session_state:
-        st.session_state[key] = "" if key not in ["round", "submitted"] else 1 if key == "round" else False
+    if len(waiting) >= 2:
+        random.shuffle(waiting)
+        for i in range(0, len(waiting) - 1, 2):
+            p1, p2 = waiting[i], waiting[i+1]
+            ref.child("players").child(p1).update({"partner": p2, "role": "P1"})
+            ref.child("players").child(p2).update({"partner": p1, "role": "P2"})
+            match_id = f"{p1}_vs_{p2}"
+            ref.child("matches").child(match_id).set({
+                "p1": p1,
+                "p2": p2,
+                "round1": {},
+                "round2": {}
+            })
 
-# --- Name Entry ---
-name = st.text_input("Enter your name to join the game:")
-if name and not st.session_state.name:
-    st.session_state.name = name
-    now = datetime.utcnow().isoformat()
-    db.reference(f"players/{name}").set({"joined": True, "paired": False, "timestamp": now})
+    # Check if matched
+    role = ref.child("players").child(player_name).child("role").get()
+    partner = ref.child("players").child(player_name).child("partner").get()
+    if role and partner:
+        st.info(f"🎮 You are {role} matched with {partner}")
 
-# --- Cleanup stale players (older than 5 min) ---
-players = db.reference("players").get() or {}
-now = datetime.utcnow()
-for pname, pdata in players.items():
-    ts = pdata.get("timestamp")
-    if ts:
-        try:
-            joined_time = datetime.fromisoformat(ts)
-            if now - joined_time > timedelta(minutes=5):
-                db.reference(f"players/{pname}").delete()
-        except Exception:
-            db.reference(f"players/{pname}").delete()
+        match_id = f"{player_name}_vs_{partner}" if role == "P1" else f"{partner}_vs_{player_name}"
+        match_ref = ref.child("matches").child(match_id)
 
-# --- Refresh players after cleanup ---
-players = db.reference("players").get() or {}
-pairs = db.reference("pairs").get() or {}
+        # Round 1
+        choice1 = ref.child("players").child(player_name).child("choice1").get()
+        if not choice1:
+            choice = st.selectbox("🔁 Round 1: Choose your action", ["A", "B"] if role == "P1" else ["X", "Y", "Z"])
+            if st.button("Submit Round 1 Choice"):
+                ref.child("players").child(player_name).update({"choice1": choice})
+                match_ref.child("round1").child(role).set(choice)
+                st.success("✅ Choice submitted. Waiting for partner...")
 
-# Check existing pair
-found_pair = False
-for pid, p in pairs.items():
-    if name == p.get("P1"):
-        st.session_state.pair_id = pid
-        st.session_state.role = "P1"
-        found_pair = True
-    elif name == p.get("P2"):
-        st.session_state.pair_id = pid
-        st.session_state.role = "P2"
-        found_pair = True
+        round1 = match_ref.child("round1").get()
+        if round1 and "P1" in round1 and "P2" in round1:
+            c1 = round1["P1"]
+            c2 = round1["P2"]
+            payoff1, payoff2 = payoffs[c1][c2]
+            st.success(f"🎯 Round 1: {c1} vs {c2} → Payoffs = ({payoff1}, {payoff2})")
 
-# Pair new players
-if not found_pair:
-    unpaired = [p for p in players if not players[p].get("paired") and p != name]
-    if unpaired:
-        partner = unpaired[0]
-        pair_id = f"{partner}_vs_{name}"
-        db.reference(f"pairs/{pair_id}").set({"P1": partner, "P2": name})
-        db.reference(f"players/{partner}/paired").set(True)
-        db.reference(f"players/{name}/paired").set(True)
-        st.session_state.pair_id = pair_id
-        st.session_state.role = "P2"
+            # Round 2
+            choice2 = ref.child("players").child(player_name).child("choice2").get()
+            if not choice2:
+                choice = st.selectbox("🔁 Round 2: Choose your action", ["A", "B"] if role == "P1" else ["X", "Y", "Z"])
+                if st.button("Submit Round 2 Choice"):
+                    ref.child("players").child(player_name).update({"choice2": choice})
+                    match_ref.child("round2").child(role).set(choice)
+                    st.success("✅ Round 2 choice submitted. Waiting for partner...")
 
-if not st.session_state.pair_id:
-    st.info("⏳ Waiting for another player to join...")
-    st.stop()
+            round2 = match_ref.child("round2").get()
+            if round2 and "P1" in round2 and "P2" in round2:
+                c1 = round2["P1"]
+                c2 = round2["P2"]
+                payoff1, payoff2 = payoffs[c1][c2]
+                st.success(f"🎯 Round 2: {c1} vs {c2} → Payoffs = ({payoff1}, {payoff2})")
 
-st.success(f"👋 Hello, {st.session_state.name}! You are **{st.session_state.role}** in match `{st.session_state.pair_id}`")
-
-# --- Game Play ---
-round_key = f"R{st.session_state.round}"
-options = ["A", "B"] if st.session_state.role == "P1" else ["X", "Y", "Z"]
-choice = st.radio(f"🎮 Choose your move for Round {st.session_state.round}:", options, index=0)
-if st.button("✅ Submit Choice") and not st.session_state.submitted:
-    db.reference(f"choices/{st.session_state.pair_id}/{round_key}/{st.session_state.role}").set(choice)
-    st.session_state.choice = choice
-    st.session_state.submitted = True
-    st.experimental_rerun()
-
-# --- Wait for both players ---
-choices = db.reference(f"choices/{st.session_state.pair_id}/{round_key}").get()
-if st.session_state.submitted and (not choices or "P1" not in choices or "P2" not in choices):
-    st.warning("⏳ Waiting for your partner to choose...")
-    st.stop()
-
-# --- Show Results ---
-if choices and "P1" in choices and "P2" in choices:
-    a1, a2 = choices["P1"], choices["P2"]
-    payoff_matrix = {
-        "A": {"X": (4, 3), "Y": (0, 0), "Z": (1, 4)},
-        "B": {"X": (0, 0), "Y": (2, 1), "Z": (0, 0)}
-    }
-    p1_score, p2_score = payoff_matrix[a1][a2]
-
-    st.markdown(f"""
-    ### 🧾 Round {st.session_state.round} Results:
-    - Player 1 chose **{a1}**
-    - Player 2 chose **{a2}**
-    - 💰 Payoffs: Player 1 = **{p1_score}**, Player 2 = **{p2_score}**
-    """)
-
-    if st.session_state.round == 1:
-        if st.button("🔁 Continue to Round 2"):
-            st.session_state.round = 2
-            st.session_state.submitted = False
-            st.rerun()
-    else:
-        st.success("🏁 Game finished. Thank you!")
-        # Cleanup
-        db.reference(f"players/{st.session_state.name}").delete()
-        db.reference(f"pairs/{st.session_state.pair_id}").delete()
-        db.reference(f"choices/{st.session_state.pair_id}").delete()
-        st.session_state.clear()
-        time.sleep(1)
-        st.experimental_rerun()
+                # Clean up after game
+                ref.child("players").child(player_name).delete()
+                st.info("✅ Game complete! Thank you for playing.")
