@@ -131,3 +131,47 @@ if already_matched or "role" in locals():
     else:
         st.info("⏳ Waiting for the other player to submit their action...")
 
+# ✅ Period 2 logic (if "Continue to Period 2" was clicked or auto-triggered)
+if st.session_state.get("go_to_period2", False):
+    st.subheader("🔁 Period 2: Make Your Choice (Knowing Period 1 Outcome)")
+
+    match_id = match_id if already_matched else f"{pair[0]}_vs_{pair[1]}"
+    period1_data = db.reference(f"games/{match_id}/period1").get()
+    if period1_data and "Player 1" in period1_data and "Player 2" in period1_data:
+        action1 = period1_data["Player 1"]["action"]
+        action2 = period1_data["Player 2"]["action"]
+        payoff_matrix = {
+            "A": {"X": (4, 3), "Y": (0, 0), "Z": (1, 4)},
+            "B": {"X": (0, 0), "Y": (2, 1), "Z": (0, 0)}
+        }
+        period1_payoff = payoff_matrix[action1][action2]
+        st.info(f"📢 In Period 1: P1 = {action1}, P2 = {action2} → Payoffs = {period1_payoff}")
+
+    # Let players choose again
+    game_ref2 = db.reference(f"games/{match_id}/period2")
+
+    if role == "Player 1":
+        choice2 = st.radio("Choose your Period 2 action:", ["A", "B"], key="p1_period2")
+    else:
+        choice2 = st.radio("Choose your Period 2 action:", ["X", "Y", "Z"], key="p2_period2")
+
+    if st.button("Submit Period 2 Choice"):
+        game_ref2.child(role).set({
+            "action": choice2,
+            "timestamp": time.time()
+        })
+        st.success("✅ Your Period 2 choice has been submitted!")
+
+    # Wait for both submissions
+    submitted2 = game_ref2.get()
+    if submitted2 and "Player 1" in submitted2 and "Player 2" in submitted2:
+        action1_2 = submitted2["Player 1"]["action"]
+        action2_2 = submitted2["Player 2"]["action"]
+        payoff2 = payoff_matrix[action1_2][action2_2]
+
+        st.success(f"🎯 Period 2 Outcome: P1 = {action1_2}, P2 = {action2_2} → Payoffs = {payoff2}")
+        st.balloons()
+
+        st.markdown("✅ **Game Complete!** Thanks for playing.")
+
+
