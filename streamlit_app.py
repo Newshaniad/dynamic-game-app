@@ -87,50 +87,56 @@ if name:
                     time.sleep(2)
 
 
-# --- Round 1 Logic ---
 
-# ------------------------
-# ROUND 1 - PLAYER ACTIONS
-# ------------------------
+# === Period 1 ===
+player_data = db.reference(f"players/{name}").get()
+match = player_data.get("match")
 
-# Define period 1 choices
-st.subheader("🎯 Period 1: Choose Your Action")
+if match:
+    match_ref = db.reference(f"matches/{match}")
+    match_data = match_ref.get()
 
-if "round1_done" not in st.session_state:
-    st.session_state.round1_done = False
+    # Get roles
+    role = "P1" if match_data.get("P1") == name else "P2"
+    st.write(f"🎮 You are **{role}** in match **{match}**")
 
-if not st.session_state.round1_done:
+    # Action choices
+    if "period" not in st.session_state:
+        st.session_state["period"] = 1
+
+    st.subheader(f"🕹 Period {st.session_state['period']} Action")
+
     if role == "P1":
-        p1_choice = st.radio("Player 1: Choose A or B", ["A", "B"], key="p1_choice_r1")
+        choice = st.radio("Choose your action:", ["A", "B"])
     else:
-        p2_choice = st.radio("Player 2: Choose X, Y, or Z", ["X", "Y", "Z"], key="p2_choice_r1")
+        choice = st.radio("Choose your action:", ["X", "Y", "Z"])
 
-    if st.button("Submit Period 1 Choice"):
-        if role == "P1":
-            db.reference(f"games/{match_id}/round1/P1").set(st.session_state.p1_choice_r1)
-        else:
-            db.reference(f"games/{match_id}/round1/P2").set(st.session_state.p2_choice_r1)
-        st.success("✅ Choice submitted. Waiting for your opponent...")
-        st.session_state.round1_done = True
+    if st.button("Submit Action"):
+        match_ref.child(f"period{st.session_state['period']}_{role}").set(choice)
+        st.success(f"✅ {role} action submitted.")
         st.rerun()
 
-# Display results once both players submitted
-round1_ref = db.reference(f"games/{match_id}/round1")
-round1_data = round1_ref.get()
-if round1_data and "P1" in round1_data and "P2" in round1_data:
-    st.success(f"🎯 Period 1 Outcome: P1 = {round1_data['P1']}, P2 = {round1_data['P2']}")
-    payoff_matrix = {
-        ("A", "X"): (4, 3),
-        ("A", "Y"): (0, 0),
-        ("A", "Z"): (1, 4),
-        ("B", "X"): (0, 0),
-        ("B", "Y"): (2, 1),
-        ("B", "Z"): (0, 0),
-    }
-    p1_payoff, p2_payoff = payoff_matrix.get((round1_data["P1"], round1_data["P2"]), (0, 0))
-    st.write(f"💰 Payoffs → Player 1: {p1_payoff}, Player 2: {p2_payoff}")
-    st.session_state.round1_outcome = {
-        "P1": round1_data["P1"],
-        "P2": round1_data["P2"],
-        "payoff": (p1_payoff, p2_payoff)
-    }
+    # Wait for both actions
+    p1_action = match_data.get(f"period{st.session_state['period']}_P1")
+    p2_action = match_data.get(f"period{st.session_state['period']}_P2")
+
+    if p1_action and p2_action:
+        st.success(f"🎯 Period {st.session_state['period']} Outcome:")
+        # Payoff matrix
+        payoff_matrix = {
+            "A": {"X": (4, 3), "Y": (0, 0), "Z": (1, 4)},
+            "B": {"X": (0, 0), "Y": (2, 1), "Z": (0, 0)}
+        }
+        result = payoff_matrix[p1_action][p2_action]
+        st.write(f"Player 1 chose: {p1_action}")
+        st.write(f"Player 2 chose: {p2_action}")
+        st.write(f"Payoffs → Player 1: {result[0]}, Player 2: {result[1]}")
+
+        # Save result to Firebase
+        match_ref.child(f"period{st.session_state['period']}_payoffs").set(
+            {"P1": result[0], "P2": result[1]}
+        )
+
+        if st.session_state["period"] == 1:
+            st.session_state["period"] = 2
+            st.button("➡️ Continue to Period 2", on_click=st.rerun)
