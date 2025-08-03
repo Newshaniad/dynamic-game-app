@@ -4,6 +4,7 @@ import random
 import firebase_admin
 from firebase_admin import credentials, db
 import json
+import time
 
 # --- Firebase Setup ---
 cred = credentials.Certificate(json.loads(st.secrets["firebase_key"]))
@@ -38,55 +39,64 @@ st.markdown("""
 - Player 2 chooses: **X**, **Y**, or **Z**
 """)
 
-# --- Session Management ---
-if "name" not in st.session_state:
-    st.session_state.name = ""
-if "role" not in st.session_state:
-    st.session_state.role = ""
-if "pair_id" not in st.session_state:
-    st.session_state.pair_id = ""
-if "round" not in st.session_state:
-    st.session_state.round = 1
-if "choice" not in st.session_state:
-    st.session_state.choice = ""
+# --- Session State Initialization ---
+for key in ["name", "role", "pair_id", "round", "choice", "game_over"]:
+    if key not in st.session_state:
+        st.session_state[key] = "" if key != "round" else 1
 
 # --- Name Entry ---
 name = st.text_input("Enter your name to join the game:")
 if name and not st.session_state.name:
     st.session_state.name = name
-    player_ref = db.reference(f"players/{name}")
-    player_ref.set({"joined": True})
+    db.reference(f"players/{name}").set({"joined": True, "paired": False})
 
 # --- Player Pairing ---
 players = db.reference("players").get() or {}
 paired = db.reference("pairs").get() or {}
 
-unpaired = [p for p in players if all(p not in pair for pair in paired.values())]
-if len(unpaired) >= 2:
-    p1, p2 = random.sample(unpaired, 2)
-    pair_id = f"{p1}_vs_{p2}"
-    db.reference(f"pairs/{pair_id}").set({"P1": p1, "P2": p2})
-    if name in [p1, p2]:
-        st.session_state.pair_id = pair_id
-        st.session_state.role = "P1" if name == p1 else "P2"
+# Check if already paired
+found_pair = False
+for pid, pair in paired.items():
+    if name == pair.get("P1"):
+        st.session_state.pair_id = pid
+        st.session_state.role = "P1"
+        found_pair = True
+    elif name == pair.get("P2"):
+        st.session_state.pair_id = pid
+        st.session_state.role = "P2"
+        found_pair = True
+
+# Try new pairing if not already paired
+if not found_pair:
+    unpaired = [p for p in players if not players[p].get("paired")]
+    if len(unpaired) >= 2:
+        p1, p2 = random.sample(unpaired, 2)
+        pair_id = f"{p1}_vs_{p2}"
+        db.reference(f"pairs/{pair_id}").set({"P1": p1, "P2": p2})
+        db.reference(f"players/{p1}/paired").set(True)
+        db.reference(f"players/{p2}/paired").set(True)
+        if name == p1:
+            st.session_state.pair_id = pair_id
+            st.session_state.role = "P1"
+        elif name == p2:
+            st.session_state.pair_id = pair_id
+            st.session_state.role = "P2"
 
 if not st.session_state.pair_id:
-    st.info("⏳ Waiting for other players to join...")
+    st.info("⏳ Waiting to be paired with another player...")
     st.stop()
 
 st.success(f"👋 Welcome, {st.session_state.name}! You are **{st.session_state.role}** in match `{st.session_state.pair_id}`")
 
-# --- Choice Interface ---
-pair = db.reference(f"pairs/{st.session_state.pair_id}").get()
+# --- Game Play ---
 round_key = f"R{st.session_state.round}"
-
 options = ["A", "B"] if st.session_state.role == "P1" else ["X", "Y", "Z"]
 choice = st.radio(f"🎮 Choose your action (Round {st.session_state.round}):", options)
 if st.button("Submit Choice"):
     db.reference(f"choices/{st.session_state.pair_id}/{round_key}/{st.session_state.role}").set(choice)
     st.session_state.choice = choice
 
-# --- Show Results if both choices made ---
+# --- Show Results if both players submitted ---
 choices = db.reference(f"choices/{st.session_state.pair_id}/{round_key}").get()
 payoff_matrix = {
     "A": {"X": (4, 3), "Y": (0, 0), "Z": (1, 4)},
@@ -102,9 +112,17 @@ if choices and "P1" in choices and "P2" in choices:
     - Player 2 chose: **{a2}**
     - 💰 Payoffs → P1: **{p1_payoff}**, P2: **{p2_payoff}**
     """)
+
     if st.session_state.round == 1:
         if st.button("🔁 Play Round 2"):
             st.session_state.round = 2
             st.rerun()
     else:
-        st.success("✅ Game over! Thanks for playing.")
+        st.success("✅ Game over! Thank you for playing.")
+        # Clean up
+        db.reference(f"players/{st.session_state.name}").delete()
+        db.reference(f"choices/{st.session_state.pair_id}").delete()
+        db.reference(f"pairs/{st.session_state.pair_id}").delete()
+        st.session_state.clear()
+        time.sleep(1)
+        st.experimental_rerun()
