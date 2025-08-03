@@ -83,5 +83,5 @@ if name:
                         if name in info.get("players", []):
                             role = "Player 1" if info["players"][0] == name else "Player 2"
                             st.success(f"🎮 Hello, {name}! You are {role} in match {match_id}")
-                            st.experimental_rerun()
+                            st.rerun()
                     time.sleep(2)
