@@ -122,7 +122,7 @@ if already_matched or "role" in locals():
         payoff = payoff_matrix[action1][action2]
 
         st.success(f"🎯 Period 1 Outcome: P1 = {action1}, P2 = {action2} → Payoffs = {payoff}")
-        st.balloons()
+        
 
         # Optional: Add a continue button for Period 2
         if st.button("▶️ Continue to Period 2"):
