@@ -2,19 +2,27 @@
 import streamlit as st
 import firebase_admin
 from firebase_admin import credentials, db
-import json
 import time
 import random
+import json
 
-st.set_page_config(page_title="🎲 2-Period Dynamic Game")
+# --- Firebase Setup ---
+if not firebase_admin._apps:
+    cred = credentials.Certificate(json.loads(st.secrets["firebase_key"]))
+    firebase_admin.initialize_app(cred, {
+        'databaseURL': st.secrets["database_url"]
+    })
 
-st.title("🎲 Multiplayer 2-Period Dynamic Game")
+ref = db.reference("/players")
 
-# Game description
+# --- Game Description ---
+st.title("🎲 2-Period Dynamic Game")
+
 st.markdown("""
 **Game Description**  
-You will be matched with another player and play a 2-period dynamic game. In each period, you simultaneously choose an action.  
-After both players submit, the outcome and payoffs will be shown before moving to the next round.
+You will be matched with another player and play a **2-period dynamic game**.  
+In each period, you simultaneously choose an action.  
+After both players submit, the **outcome and payoffs** will be shown before moving to the next round.
 
 **Payoff Matrix (Player 1, Player 2):**
 
@@ -24,119 +32,84 @@ After both players submit, the outcome and payoffs will be shown before moving t
 | B   | (0, 0)  | (2, 1)  | (0, 0)  |
 """)
 
-# Firebase credentials and config
-firebase_key = st.secrets["firebase_key"]
-database_url = st.secrets["database_url"]
+# --- Name Entry ---
+player_name = st.text_input("Enter your name to join the game:")
 
-if not firebase_admin._apps:
-    cred = credentials.Certificate(json.loads(firebase_key))
-    firebase_admin.initialize_app(cred, {
-        'databaseURL': database_url
-    })
+if player_name:
+    st.success(f"👋 Welcome, {player_name}!")
 
-name = st.text_input("Enter your name to join the game:")
-
-if name:
-    st.success(f"👋 Welcome, {name}!")
-
-    player_ref = db.reference(f"players/{name}")
+    player_ref = ref.child(player_name)
     player_data = player_ref.get()
 
     if not player_data:
         player_ref.set({
             "joined": True,
-            "timestamp": time.time()
+            "timestamp": time.time(),
+            "role": "",
+            "opponent": "",
+            "choice1": "",
+            "choice2": "",
+            "result1": "",
+            "result2": ""
         })
-        st.write("✅ Firebase is connected and you are registered.")
 
-    match_ref = db.reference("matches")
-    match_data = match_ref.get() or {}
+    all_players = ref.get()
+    waiting_players = [p for p in all_players if not all_players[p]["opponent"] and p != player_name]
 
-    # Check if player already matched
-    already_matched = False
-    for match_id, info in match_data.items():
-        if name in info.get("players", []):
-            role = "Player 1" if info["players"][0] == name else "Player 2"
-            st.success(f"🎮 Hello, {name}! You are {role} in match {match_id}")
-            already_matched = True
-            break
-
-    if not already_matched:
-        unmatched = [p for p in db.reference("players").get().keys()
-                     if not any(p in m.get("players", []) for m in match_data.values())
-                     and p != name]
-
-        if unmatched:
-            partner = unmatched[0]
-            pair = sorted([name, partner])
-            match_id = f"{pair[0]}_vs_{pair[1]}"
-            match_ref.child(match_id).set({"players": pair})
-            role = "Player 1" if pair[0] == name else "Player 2"
-            st.success(f"🎮 Hello, {name}! You are {role} in match {match_id}")
+    if not player_data["opponent"]:
+        if waiting_players:
+            opponent = waiting_players[0]
+            role = "P2"
+            opp_role = "P1"
+            match_id = f"{opponent}_vs_{player_name}"
+            # Set opponents
+            ref.child(player_name).update({"opponent": opponent, "role": role})
+            ref.child(opponent).update({"opponent": player_name, "role": opp_role})
+            st.session_state.match_id = match_id
         else:
             st.info("⏳ Waiting for another player to join...")
-            with st.spinner("Checking for match..."):
-                timeout = 30
-                for i in range(timeout):
-                    match_data = match_ref.get() or {}
-                    for match_id, info in match_data.items():
-                        if name in info.get("players", []):
-                            role = "Player 1" if info["players"][0] == name else "Player 2"
-                            st.success(f"🎮 Hello, {name}! You are {role} in match {match_id}")
-                            st.rerun()
-                    time.sleep(2)
-
-
-
-# === Period 1 ===
-player_data = db.reference(f"players/{name}").get()
-match = player_data.get("match")
-
-if match:
-    match_ref = db.reference(f"matches/{match}")
-    match_data = match_ref.get()
-
-    # Get roles
-    role = "P1" if match_data.get("P1") == name else "P2"
-    st.write(f"🎮 You are **{role}** in match **{match}**")
-
-    # Action choices
-    if "period" not in st.session_state:
-        st.session_state["period"] = 1
-
-    st.subheader(f"🕹 Period {st.session_state['period']} Action")
-
-    if role == "P1":
-        choice = st.radio("Choose your action:", ["A", "B"])
+            st.stop()
     else:
-        choice = st.radio("Choose your action:", ["X", "Y", "Z"])
+        opponent = player_data["opponent"]
+        match_id = f"{player_name}_vs_{opponent}" if player_data["role"] == "P1" else f"{opponent}_vs_{player_name}"
+        st.session_state.match_id = match_id
 
-    if st.button("Submit Action"):
-        match_ref.child(f"period{st.session_state['period']}_{role}").set(choice)
-        st.success(f"✅ {role} action submitted.")
-        st.rerun()
+    st.success(f"🎮 Hello, {player_name}! You are **{player_data['role']}** in match **{st.session_state.match_id}**")
 
-    # Wait for both actions
-    p1_action = match_data.get(f"period{st.session_state['period']}_P1")
-    p2_action = match_data.get(f"period{st.session_state['period']}_P2")
+    # --- Period 1 ---
+    st.subheader("🔁 Period 1: Choose your action")
 
-    if p1_action and p2_action:
-        st.success(f"🎯 Period {st.session_state['period']} Outcome:")
-        # Payoff matrix
+    choice_options_p1 = ["A", "B"] if player_data["role"] == "P1" else ["X", "Y", "Z"]
+    player_choice = st.radio("Your action:", choice_options_p1, key="period1_choice")
+    if st.button("✅ Submit Choice"):
+        ref.child(player_name).update({"choice1": player_choice})
+        st.success(f"✅ Choice submitted: {player_choice}")
+
+    # Wait for both choices
+    updated = ref.child(player_name).get()
+    opponent_data = ref.child(opponent).get()
+
+    if updated["choice1"] and opponent_data["choice1"]:
+        p1_action = updated["choice1"] if player_data["role"] == "P1" else opponent_data["choice1"]
+        p2_action = updated["choice1"] if player_data["role"] == "P2" else opponent_data["choice1"]
+
         payoff_matrix = {
-            "A": {"X": (4, 3), "Y": (0, 0), "Z": (1, 4)},
-            "B": {"X": (0, 0), "Y": (2, 1), "Z": (0, 0)}
+            ("A", "X"): (4, 3), ("A", "Y"): (0, 0), ("A", "Z"): (1, 4),
+            ("B", "X"): (0, 0), ("B", "Y"): (2, 1), ("B", "Z"): (0, 0),
         }
-        result = payoff_matrix[p1_action][p2_action]
-        st.write(f"Player 1 chose: {p1_action}")
-        st.write(f"Player 2 chose: {p2_action}")
-        st.write(f"Payoffs → Player 1: {result[0]}, Player 2: {result[1]}")
+        result = payoff_matrix.get((p1_action, p2_action), (0, 0))
 
-        # Save result to Firebase
-        match_ref.child(f"period{st.session_state['period']}_payoffs").set(
-            {"P1": result[0], "P2": result[1]}
-        )
+        if player_data["role"] == "P1":
+            ref.child(player_name).update({"result1": result[0]})
+            ref.child(opponent).update({"result1": result[1]})
+            st.session_state.result = result[0]
+        else:
+            st.session_state.result = result[1]
 
-        if st.session_state["period"] == 1:
-            st.session_state["period"] = 2
-            st.button("➡️ Continue to Period 2", on_click=st.rerun)
+        st.success(f"🎯 Period 1 Result: P1 = {p1_action}, P2 = {p2_action} → Payoffs = {result}")
+
+        if st.button("➡️ Proceed to Period 2"):
+            st.session_state.period2 = True
+            st.experimental_rerun()
+    else:
+        st.info("⌛ Waiting for both players to submit their choices for Period 1...")
