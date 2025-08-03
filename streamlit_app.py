@@ -86,50 +86,48 @@ if name:
                             st.rerun()
                     time.sleep(2)
 
-# --- PERIOD 1 CHOICE ---
-match_ref = db.reference(f"matches/{match_id}")
-actions_ref = match_ref.child("period1_actions")
+# ✅ Once matched, proceed to Period 1 gameplay
+if already_matched or "role" in locals():
+    match_id = match_id if already_matched else f"{pair[0]}_vs_{pair[1]}"
+    role = role if already_matched else ("Player 1" if pair[0] == name else "Player 2")
+    game_ref = db.reference(f"games/{match_id}/period1")
 
-player_action = actions_ref.child(name).get()
+    # Display available choices
+    st.subheader("🎮 Period 1: Make Your Choice")
 
-if not player_action:
-    st.subheader("🎮 Period 1: Make your move")
-    
-    if role == "P1":
-        move = st.radio("Choose your action (Player 1):", ["A", "B"])
+    if role == "Player 1":
+        choice = st.radio("Choose your action:", ["A", "B"])
     else:
-        move = st.radio("Choose your action (Player 2):", ["X", "Y", "Z"])
+        choice = st.radio("Choose your action:", ["X", "Y", "Z"])
 
-    if st.button("Submit Move"):
-        actions_ref.child(name).set(move)
-        st.success("✅ Move submitted. Waiting for other player...")
-        st.rerun()
-else:
-    st.info("✅ You submitted your move. Waiting for your opponent...")
+    if st.button("Submit Choice"):
+        game_ref.child(role).set({
+            "action": choice,
+            "timestamp": time.time()
+        })
+        st.success("✅ Your choice has been submitted!")
 
-# Check if both moves submitted
-actions = actions_ref.get()
-if actions and len(actions) == 2:
-    p1_move = actions.get(player1)
-    p2_move = actions.get(player2)
+    # Wait for both players to submit
+    submitted = game_ref.get()
+    if submitted and "Player 1" in submitted and "Player 2" in submitted:
+        action1 = submitted["Player 1"]["action"]
+        action2 = submitted["Player 2"]["action"]
 
-    # PAYOFF LOGIC
-    payoff_matrix = {
-        "A": {"X": (4, 3), "Y": (0, 0), "Z": (1, 4)},
-        "B": {"X": (0, 0), "Y": (2, 1), "Z": (0, 0)},
-    }
+        # Define payoff matrix
+        payoff_matrix = {
+            "A": {"X": (4, 3), "Y": (0, 0), "Z": (1, 4)},
+            "B": {"X": (0, 0), "Y": (2, 1), "Z": (0, 0)}
+        }
 
-    p1_payoff, p2_payoff = payoff_matrix[p1_move][p2_move]
+        payoff = payoff_matrix[action1][action2]
 
-    st.success(f"🎯 Period 1 Result: P1 = {p1_move}, P2 = {p2_move} → Payoffs = ({p1_payoff}, {p2_payoff})")
+        st.success(f"🎯 Period 1 Outcome: P1 = {action1}, P2 = {action2} → Payoffs = {payoff}")
+        st.balloons()
 
-    # Store result for Period 2 reference
-    match_ref.child("period1_result").set({
-        "p1_move": p1_move,
-        "p2_move": p2_move,
-        "p1_payoff": p1_payoff,
-        "p2_payoff": p2_payoff
-    })
-
-    st.button("🔁 Continue to Period 2", on_click=st.rerun)
+        # Optional: Add a continue button for Period 2
+        if st.button("▶️ Continue to Period 2"):
+            st.session_state["go_to_period2"] = True
+            st.rerun()
+    else:
+        st.info("⏳ Waiting for the other player to submit their action...")
 
