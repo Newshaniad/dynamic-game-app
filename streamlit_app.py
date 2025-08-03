@@ -1,80 +1,102 @@
-# streamlit_app.py
 import streamlit as st
 import firebase_admin
 from firebase_admin import credentials, db
 import json
 import random
+import time
 
-# Initialize Firebase using Streamlit Secrets
+# Page config
+st.set_page_config(page_title="Multiplayer 2-Period Dynamic Game", page_icon="🎲")
+
+# Firebase setup
 if not firebase_admin._apps:
     cred = credentials.Certificate(json.loads(st.secrets["firebase_key"]))
     firebase_admin.initialize_app(cred, {
-        'databaseURL': st.secrets["databaseURL"]
+        'databaseURL': st.secrets["database_url"]
     })
 
+# Refs
+players_ref = db.reference("players")
+
+# UI title
 st.title("🎲 Multiplayer 2-Period Dynamic Game")
+st.markdown("Enter your name to join the game:")
 
-# Enter name
-name = st.text_input("Enter your name to join the game:")
-submit = st.button("Submit")
+name = st.text_input("Enter your name")
+if st.button("Submit") and name:
+    st.session_state.name = name
+    st.session_state.role = None
+    st.session_state.round = 1
+    st.session_state.choices = {}
 
-if submit and name:
-    players_ref = db.reference("players")
-    current_players = players_ref.get() or {}
-
-    if name in current_players:
-        st.warning("Name already used. Choose another.")
-        st.stop()
-
-    players_ref.child(name).set({
-        "round": 1,
-        "choice1": None,
-        "choice2": None,
-        "paired": False
-    })
+    # Register player
+    player_ref = players_ref.child(name)
+    player_ref.set({"joined": True, "choice1": "", "choice2": ""})
     st.success(f"👋 Welcome, {name}!")
-    st.experimental_rerun()
+    st.rerun()
 
-current_players = db.reference("players").get() or {}
-unpaired = [p for p, v in current_players.items() if not v["paired"]]
+# Proceed if name exists
+if "name" in st.session_state:
+    name = st.session_state.name
+    player_list = list(players_ref.get().keys())
 
-if name in current_players and not current_players[name]["paired"]:
-    if len(unpaired) >= 2:
-        others = [p for p in unpaired if p != name]
-        if others:
-            partner = random.choice(others)
-            db.reference("players").child(name).update({"paired": partner})
-            db.reference("players").child(partner).update({"paired": name})
-            st.experimental_rerun()
+    # Wait for another player
+    if len(player_list) < 2:
+        st.info("Waiting for another player to join...")
     else:
-        st.info("⌛ Waiting for another player to join...")
+        player_list.sort()
+        idx = player_list.index(name)
+        if idx % 2 == 0:
+            role = "Player 1"
+        else:
+            role = "Player 2"
+        st.session_state.role = role
+        opponent = player_list[idx + 1] if role == "Player 1" else player_list[idx - 1]
+        st.success(f"You are {role} matched with {opponent}")
 
-if name in current_players and current_players[name]["paired"]:
-    partner = current_players[name]["paired"]
-    st.info(f"You are matched with {partner}!")
+        # Play round 1
+        if st.session_state.round == 1:
+            st.subheader("🔁 Round 1 Choices")
+            choice = st.radio("Choose your action:", ["A", "B"] if role == "Player 1" else ["X", "Y", "Z"])
+            if st.button("Submit Choice"):
+                players_ref.child(name).update({"choice1": choice})
+                st.session_state.choices["round1"] = choice
+                st.rerun()
 
-    round_number = current_players[name]["round"]
+        # Display round 1 results if both chose
+        if st.session_state.round == 1:
+            data = players_ref.get()
+            p1 = player_list[idx - idx % 2]  # Even index
+            p2 = player_list[idx - idx % 2 + 1]  # Next
+            c1 = data[p1].get("choice1", "")
+            c2 = data[p2].get("choice1", "")
+            if c1 and c2:
+                st.subheader("📊 Round 1 Results")
+                st.write(f"Player 1 ({p1}) chose: {c1}")
+                st.write(f"Player 2 ({p2}) chose: {c2}")
+                st.session_state.round = 2
+                time.sleep(2)
+                st.rerun()
 
-    st.header(f"Round {round_number}")
-    if round_number == 1:
-        choice = st.radio("Choose action for Round 1", ["A", "B"])
-        if st.button("Play Round 1"):
-            db.reference("players").child(name).update({"choice1": choice})
-            st.success("Waiting for your partner's move...")
-    elif round_number == 2:
-        choice = st.radio("Choose action for Round 2", ["A", "B"])
-        if st.button("Play Round 2"):
-            db.reference("players").child(name).update({"choice2": choice})
-            st.success("Waiting for your partner's move...")
+        # Round 2
+        if st.session_state.round == 2:
+            st.subheader("🔁 Round 2 Choices")
+            choice = st.radio("Choose your action:", ["A", "B"] if role == "Player 1" else ["X", "Y", "Z"])
+            if st.button("Submit Round 2 Choice"):
+                players_ref.child(name).update({"choice2": choice})
+                st.session_state.choices["round2"] = choice
+                st.rerun()
 
-    you = db.reference("players").child(name).get()
-    partner_data = db.reference("players").child(partner).get()
-
-    if you and partner_data:
-        if round_number == 1 and you["choice1"] and partner_data["choice1"]:
-            st.success(f"✅ Round 1 Done! You: {you['choice1']}, {partner}: {partner_data['choice1']}")
-            db.reference("players").child(name).update({"round": 2})
-            st.experimental_rerun()
-        elif round_number == 2 and you["choice2"] and partner_data["choice2"]:
-            st.success(f"🎉 Game Over!\nRound 1: {you['choice1']} vs {partner_data['choice1']}\n"
-                       f"Round 2: {you['choice2']} vs {partner_data['choice2']}")
+        # Display round 2 results
+        if st.session_state.round == 2:
+            data = players_ref.get()
+            p1 = player_list[idx - idx % 2]
+            p2 = player_list[idx - idx % 2 + 1]
+            c1 = data[p1].get("choice2", "")
+            c2 = data[p2].get("choice2", "")
+            if c1 and c2:
+                st.subheader("📊 Round 2 Results")
+                st.write(f"Player 1 ({p1}) chose: {c1}")
+                st.write(f"Player 2 ({p2}) chose: {c2}")
+                st.balloons()
+                st.markdown("### 🎉 Game Over. Thank you for playing!")
