@@ -108,52 +108,30 @@ if already_matched or "role" in locals():
         st.success("✅ Your choice has been submitted!")
 
     # Wait for both players to submit
-        with st.spinner("⏳ Waiting for the other player to submit their action..."):
-        max_wait = 10  # seconds
-        for _ in range(max_wait):
-            submitted = game_ref.get()
-            if submitted and "Player 1" in submitted and "Player 2" in submitted:
-                action1 = submitted["Player 1"]["action"]
-                action2 = submitted["Player 2"]["action"]
+with st.spinner("⏳ Waiting for the other player to submit their action..."):
+    max_wait = 10  # seconds
+    for _ in range(max_wait):
+        submitted = game_ref.get()
+        if submitted and "Player 1" in submitted and "Player 2" in submitted:
+            action1 = submitted["Player 1"]["action"]
+            action2 = submitted["Player 2"]["action"]
 
-                payoff_matrix = {
-                    "A": {"X": (4, 3), "Y": (0, 0), "Z": (1, 4)},
-                    "B": {"X": (0, 0), "Y": (2, 1), "Z": (0, 0)}
-                }
-                payoff = payoff_matrix[action1][action2]
+            payoff_matrix = {
+                "A": {"X": (4, 3), "Y": (0, 0), "Z": (1, 4)},
+                "B": {"X": (0, 0), "Y": (2, 1), "Z": (0, 0)}
+            }
+            payoff = payoff_matrix[action1][action2]
 
-                st.success(f"🎯 Period 1 Outcome: P1 = {action1}, P2 = {action2} → Payoffs = {payoff}")
+            st.success(f"🎯 Period 1 Outcome: P1 = {action1}, P2 = {action2} → Payoffs = {payoff}")
 
-                if st.button("▶️ Continue to Period 2"):
-                    st.session_state["go_to_period2"] = True
-                    st.rerun()
-                break
+            if st.button("▶️ Continue to Period 2"):
+                st.session_state["go_to_period2"] = True
+                st.rerun()
+            break
+        time.sleep(1)
+    else:
+        st.warning("⌛ The other player hasn't submitted yet. Please wait a bit more and refresh.")
 
-            time.sleep(1)
-         else:
-        with st.spinner("⏳ Waiting for the other player to submit their action..."):
-            max_wait = 10  # seconds
-            for _ in range(max_wait):
-                submitted = game_ref.get()
-                if submitted and "Player 1" in submitted and "Player 2" in submitted:
-                    action1 = submitted["Player 1"]["action"]
-                    action2 = submitted["Player 2"]["action"]
-
-                    payoff_matrix = {
-                        "A": {"X": (4, 3), "Y": (0, 0), "Z": (1, 4)},
-                        "B": {"X": (0, 0), "Y": (2, 1), "Z": (0, 0)}
-                    }
-                    payoff = payoff_matrix[action1][action2]
-
-                    st.success(f"🎯 Period 1 Outcome: P1 = {action1}, P2 = {action2} → Payoffs = {payoff}")
-
-                    if st.button("▶️ Continue to Period 2"):
-                        st.session_state["go_to_period2"] = True
-                        st.rerun()
-                    break
-                time.sleep(1)
-            else:
-                st.warning("⌛ The other player hasn't submitted yet. Please wait a bit more and refresh.")
 
 # ✅ Period 2 logic (if "Continue to Period 2" was clicked or auto-triggered)
 if st.session_state.get("go_to_period2", False):
