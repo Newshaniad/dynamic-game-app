@@ -40,9 +40,9 @@ st.markdown("""
 """)
 
 # --- Session State Initialization ---
-for key in ["name", "role", "pair_id", "round", "choice", "game_over"]:
+for key in ["name", "role", "pair_id", "round", "choice", "submitted"]:
     if key not in st.session_state:
-        st.session_state[key] = "" if key != "round" else 1
+        st.session_state[key] = "" if key not in ["round", "submitted"] else 1 if key == "round" else False
 
 # --- Name Entry ---
 name = st.text_input("Enter your name to join the game:")
@@ -91,20 +91,26 @@ st.success(f"👋 Welcome, {st.session_state.name}! You are **{st.session_state.
 # --- Game Play ---
 round_key = f"R{st.session_state.round}"
 options = ["A", "B"] if st.session_state.role == "P1" else ["X", "Y", "Z"]
-choice = st.radio(f"🎮 Choose your action (Round {st.session_state.round}):", options)
-if st.button("Submit Choice"):
+choice = st.radio(f"🎮 Choose your action (Round {st.session_state.round}):", options, index=0)
+if st.button("Submit Choice") and not st.session_state.submitted:
     db.reference(f"choices/{st.session_state.pair_id}/{round_key}/{st.session_state.role}").set(choice)
     st.session_state.choice = choice
+    st.session_state.submitted = True
+    st.experimental_rerun()
+
+# --- Wait for other player's choice ---
+choices = db.reference(f"choices/{st.session_state.pair_id}/{round_key}").get()
+if st.session_state.submitted and (not choices or "P1" not in choices or "P2" not in choices):
+    st.warning("⏳ Waiting for the other player to make their choice...")
+    st.stop()
 
 # --- Show Results if both players submitted ---
-choices = db.reference(f"choices/{st.session_state.pair_id}/{round_key}").get()
-payoff_matrix = {
-    "A": {"X": (4, 3), "Y": (0, 0), "Z": (1, 4)},
-    "B": {"X": (0, 0), "Y": (2, 1), "Z": (0, 0)}
-}
-
 if choices and "P1" in choices and "P2" in choices:
     a1, a2 = choices["P1"], choices["P2"]
+    payoff_matrix = {
+        "A": {"X": (4, 3), "Y": (0, 0), "Z": (1, 4)},
+        "B": {"X": (0, 0), "Y": (2, 1), "Z": (0, 0)}
+    }
     p1_payoff, p2_payoff = payoff_matrix[a1][a2]
     st.markdown(f"""
     ### 🎯 Round {st.session_state.round} Results:
@@ -116,6 +122,7 @@ if choices and "P1" in choices and "P2" in choices:
     if st.session_state.round == 1:
         if st.button("🔁 Play Round 2"):
             st.session_state.round = 2
+            st.session_state.submitted = False
             st.rerun()
     else:
         st.success("✅ Game over! Thank you for playing.")
