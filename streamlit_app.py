@@ -174,4 +174,52 @@ if st.session_state.get("go_to_period2", False):
 
         st.markdown("✅ **Game Complete!** Thanks for playing.")
 
+import matplotlib.pyplot as plt
+import pandas as pd
+
+st.subheader("📊 Game Summary: All Participants' Payoffs")
+
+# Fetch all match results from Firebase
+games_ref = db.reference("games")
+all_games = games_ref.get() or {}
+
+results = []
+for match_id, rounds in all_games.items():
+    for period, data in rounds.items():
+        if "Player 1" in data and "Player 2" in data:
+            p1_action = data["Player 1"]["action"]
+            p2_action = data["Player 2"]["action"]
+            payoff_matrix = {
+                "A": {"X": (4, 3), "Y": (0, 0), "Z": (1, 4)},
+                "B": {"X": (0, 0), "Y": (2, 1), "Z": (0, 0)}
+            }
+            payoff = payoff_matrix.get(p1_action, {}).get(p2_action, (None, None))
+            results.append({
+                "Match": match_id,
+                "Period": period,
+                "P1_Action": p1_action,
+                "P2_Action": p2_action,
+                "P1_Payoff": payoff[0],
+                "P2_Payoff": payoff[1]
+            })
+
+if results:
+    df_results = pd.DataFrame(results)
+    st.dataframe(df_results)
+
+    # Optional: Summary bar chart
+    summary = df_results.groupby("Match")[["P1_Payoff", "P2_Payoff"]].sum().reset_index()
+
+    fig, ax = plt.subplots(figsize=(8, 4))
+    ax.bar(summary["Match"], summary["P1_Payoff"], label="Player 1", alpha=0.7)
+    ax.bar(summary["Match"], summary["P2_Payoff"], label="Player 2", alpha=0.7, bottom=summary["P1_Payoff"])
+    ax.set_ylabel("Total Payoff")
+    ax.set_title("Total Payoffs by Match")
+    ax.legend()
+    plt.xticks(rotation=45)
+    st.pyplot(fig)
+else:
+    st.info("No game results available yet.")
+
+
 
