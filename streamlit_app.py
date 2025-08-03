@@ -7,9 +7,10 @@ import json
 
 # --- Firebase Setup ---
 cred = credentials.Certificate(json.loads(st.secrets["firebase_key"]))
-firebase_admin.initialize_app(cred, {
-    'databaseURL': st.secrets["database_url"]
-})
+if not firebase_admin._apps:
+    firebase_admin.initialize_app(cred, {
+        'databaseURL': st.secrets["database_url"]
+    })
 
 # --- UI: Game Description and Table ---
 st.title("🎲 Multiplayer 2-Period Dynamic Game")
