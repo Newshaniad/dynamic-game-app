@@ -191,52 +191,57 @@ with st.spinner("⏳ Waiting for the other player to submit their action in Peri
 
         st.markdown("✅ **Game Complete!** Thanks for playing.")
 
-import matplotlib.pyplot as plt
 import pandas as pd
+import matplotlib.pyplot as plt
 
-st.subheader("📊 Game Summary: All Participants' Payoffs")
+st.subheader("📊 Summary of All Participants' Results")
 
-# Fetch all match results from Firebase
-games_ref = db.reference("games")
-all_games = games_ref.get() or {}
+# Fetch all matches from Firebase
+all_games_ref = db.reference("games")
+all_games = all_games_ref.get()
 
-results = []
-for match_id, rounds in all_games.items():
-    for period, data in rounds.items():
-        if "Player 1" in data and "Player 2" in data:
-            p1_action = data["Player 1"]["action"]
-            p2_action = data["Player 2"]["action"]
+if all_games:
+    results = []
+
+    for match_id, periods in all_games.items():
+        if "period1" in periods and "period2" in periods:
+            p1_name = periods["period1"].get("Player 1", {}).get("name")
+            p2_name = periods["period1"].get("Player 2", {}).get("name")
+            
+            # Fallback to ID if names not stored
+            if not p1_name or not p2_name:
+                p1_name, p2_name = match_id.split("_vs_")
+
+            # Get actions
+            a1_p1 = periods["period1"]["Player 1"]["action"]
+            a1_p2 = periods["period1"]["Player 2"]["action"]
+            a2_p1 = periods["period2"]["Player 1"]["action"]
+            a2_p2 = periods["period2"]["Player 2"]["action"]
+
+            # Compute payoffs using matrix
             payoff_matrix = {
                 "A": {"X": (4, 3), "Y": (0, 0), "Z": (1, 4)},
                 "B": {"X": (0, 0), "Y": (2, 1), "Z": (0, 0)}
             }
-            payoff = payoff_matrix.get(p1_action, {}).get(p2_action, (None, None))
-            results.append({
-                "Match": match_id,
-                "Period": period,
-                "P1_Action": p1_action,
-                "P2_Action": p2_action,
-                "P1_Payoff": payoff[0],
-                "P2_Payoff": payoff[1]
-            })
 
-if results:
-    df_results = pd.DataFrame(results)
-    st.dataframe(df_results)
+            p1_payoff_1, p2_payoff_1 = payoff_matrix[a1_p1][a1_p2]
+            p1_payoff_2, p2_payoff_2 = payoff_matrix[a2_p1][a2_p2]
 
-    # Optional: Summary bar chart
-    summary = df_results.groupby("Match")[["P1_Payoff", "P2_Payoff"]].sum().reset_index()
+            # Total payoffs
+            results.append({"Player": p1_name, "Payoff": p1_payoff_1 + p1_payoff_2})
+            results.append({"Player": p2_name, "Payoff": p2_payoff_1 + p2_payoff_2})
 
-    fig, ax = plt.subplots(figsize=(8, 4))
-    ax.bar(summary["Match"], summary["P1_Payoff"], label="Player 1", alpha=0.7)
-    ax.bar(summary["Match"], summary["P2_Payoff"], label="Player 2", alpha=0.7, bottom=summary["P1_Payoff"])
+    # Build DataFrame
+    df = pd.DataFrame(results)
+    df_summary = df.groupby("Player", as_index=False).sum()
+
+    # Plot
+    fig, ax = plt.subplots()
+    ax.bar(df_summary["Player"], df_summary["Payoff"])
+    ax.set_title("Total Payoffs of All Participants")
     ax.set_ylabel("Total Payoff")
-    ax.set_title("Total Payoffs by Match")
-    ax.legend()
+    ax.set_xlabel("Player Name")
     plt.xticks(rotation=45)
     st.pyplot(fig)
 else:
-    st.info("No game results available yet.")
-
-
-
+    st.info("No completed games yet to display.")
