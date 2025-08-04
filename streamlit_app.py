@@ -15,11 +15,11 @@ st.title("🎲 Multiplayer 2-Period Dynamic Game")
 
 # Game description
 st.markdown("""
-*Game Description*  
+Game Description  
 You will be matched with another player and play a 2-period dynamic game. In each period, you simultaneously choose an action.  
 After both players submit, the outcome and payoffs will be shown before moving to the next round.
 
-*Payoff Matrix (Player 1, Player 2):*
+Payoff Matrix (Player 1, Player 2):
 
 |     | X       | Y       | Z       |
 |-----|---------|---------|---------|
@@ -214,15 +214,15 @@ if name:
 
                         st.success(f"🎯 Period 2 Outcome: P1 = {action1_2}, P2 = {action2_2} → Payoffs = {payoff2}")
                         st.balloons()
-                        st.markdown("✅ *Game Complete!* Thanks for playing.")
+                        st.markdown("✅ Game Complete! Thanks for playing.")
                         break
                     time.sleep(1)
                 else:
                     st.warning("⌛ The other player hasn't submitted their Period 2 action yet. Please wait and refresh.")
                     st.balloons()
-                    st.markdown("✅ *Game Complete!* Thanks for playing.")
+                    st.markdown("✅ Game Complete! Thanks for playing.")
                     
-                    # Initialize variables for PDF and cleanup functionality
+                    # Initialize variables for PDF functionality
                     st.session_state["game_complete"] = True
                     st.session_state["match_id"] = match_id
                     st.session_state["action1"] = action1
