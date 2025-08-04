@@ -92,17 +92,26 @@ if already_matched or "role" in locals():
     role = role if already_matched else ("Player 1" if pair[0] == name else "Player 2")
     game_ref = db.reference(f"games/{match_id}/period1")
 
+    # Display available choices
     st.subheader("🎮 Period 1: Make Your Choice")
 
-    submitted = game_ref.get()
-    player_submitted = submitted and role in submitted
-
+    existing_action = game_ref.child(role).get()
+if existing_action:
+    st.info(f"✅ You already submitted: {existing_action['action']}")
+else:
     if role == "Player 1":
-        choice = st.radio("Choose your action:", ["A", "B"], disabled=player_submitted)
+        choice = st.radio("Choose your action:", ["A", "B"])
     else:
-        choice = st.radio("Choose your action:", ["X", "Y", "Z"], disabled=player_submitted)
+        choice = st.radio("Choose your action:", ["X", "Y", "Z"])
 
-    if not player_submitted and st.button("Submit Choice"):
+    if st.button("Submit Choice"):
+        game_ref.child(role).set({
+            "action": choice,
+            "timestamp": time.time()
+        })
+        st.success("✅ Your choice has been submitted!")
+
+    if st.button("Submit Choice"):
         game_ref.child(role).set({
             "action": choice,
             "timestamp": time.time()
@@ -110,38 +119,37 @@ if already_matched or "role" in locals():
         st.success("✅ Your choice has been submitted!")
 
     # Wait for both players to submit
-    with st.spinner("⏳ Waiting for the other player to submit their action..."):
-        max_wait = 10  # seconds
-        for _ in range(max_wait):
-            submitted = game_ref.get()
-            if submitted and "Player 1" in submitted and "Player 2" in submitted:
-                action1 = submitted["Player 1"]["action"]
-                action2 = submitted["Player 2"]["action"]
+with st.spinner("⏳ Waiting for the other player to submit their action..."):
+    max_wait = 10  # seconds
+    for _ in range(max_wait):
+        submitted = game_ref.get()
+        if submitted and "Player 1" in submitted and "Player 2" in submitted:
+            action1 = submitted["Player 1"]["action"]
+            action2 = submitted["Player 2"]["action"]
 
-                payoff_matrix = {
-                    "A": {"X": (4, 3), "Y": (0, 0), "Z": (1, 4)},
-                    "B": {"X": (0, 0), "Y": (2, 1), "Z": (0, 0)}
-                }
-                payoff = payoff_matrix[action1][action2]
+            payoff_matrix = {
+                "A": {"X": (4, 3), "Y": (0, 0), "Z": (1, 4)},
+                "B": {"X": (0, 0), "Y": (2, 1), "Z": (0, 0)}
+            }
+            payoff = payoff_matrix[action1][action2]
 
-                st.success(f"🎯 Period 1 Outcome: P1 = {action1}, P2 = {action2} → Payoffs = {payoff}")
+            st.success(f"🎯 Period 1 Outcome: P1 = {action1}, P2 = {action2} → Payoffs = {payoff}")
 
-                if st.button("▶️ Continue to Period 2"):
-                    st.session_state["go_to_period2"] = True
-                    st.rerun()
-                break
-            time.sleep(1)
-        else:
-            st.warning("⌛ The other player hasn't submitted yet. Please wait and refresh.")
+            if st.button("▶️ Continue to Period 2"):
+                st.session_state["go_to_period2"] = True
+                st.rerun()
+            break
+        time.sleep(1)
+    else:
+        st.warning("⌛ The other player hasn't submitted yet. Please wait a bit more and refresh.")
 
 
 # ✅ Period 2 logic (if "Continue to Period 2" was clicked or auto-triggered)
 if st.session_state.get("go_to_period2", False):
     st.subheader("🔁 Period 2: Make Your Choice (Knowing Period 1 Outcome)")
 
-    game_ref2 = db.reference(f"games/{match_id}/period2")
+    match_id = match_id if already_matched else f"{pair[0]}_vs_{pair[1]}"
     period1_data = db.reference(f"games/{match_id}/period1").get()
-
     if period1_data and "Player 1" in period1_data and "Player 2" in period1_data:
         action1 = period1_data["Player 1"]["action"]
         action2 = period1_data["Player 2"]["action"]
@@ -152,15 +160,19 @@ if st.session_state.get("go_to_period2", False):
         period1_payoff = payoff_matrix[action1][action2]
         st.info(f"📢 In Period 1: P1 = {action1}, P2 = {action2} → Payoffs = {period1_payoff}")
 
-    submitted2 = game_ref2.get()
-    player_submitted2 = submitted2 and role in submitted2
+    # Let players choose again
+    game_ref2 = db.reference(f"games/{match_id}/period2")
 
+    existing_action2 = game_ref2.child(role).get()
+if existing_action2:
+    st.info(f"✅ You already submitted: {existing_action2['action']}")
+else:
     if role == "Player 1":
-        choice2 = st.radio("Choose your Period 2 action:", ["A", "B"], key="p1_period2", disabled=player_submitted2)
+        choice2 = st.radio("Choose your Period 2 action:", ["A", "B"], key="p1_period2")
     else:
-        choice2 = st.radio("Choose your Period 2 action:", ["X", "Y", "Z"], key="p2_period2", disabled=player_submitted2)
+        choice2 = st.radio("Choose your Period 2 action:", ["X", "Y", "Z"], key="p2_period2")
 
-    if not player_submitted2 and st.button("Submit Period 2 Choice"):
+    if st.button("Submit Period 2 Choice"):
         game_ref2.child(role).set({
             "action": choice2,
             "timestamp": time.time()
@@ -168,21 +180,31 @@ if st.session_state.get("go_to_period2", False):
         st.success("✅ Your Period 2 choice has been submitted!")
 
     # Wait for both submissions
-    with st.spinner("⏳ Waiting for the other player to submit their action in Period 2..."):
-        for _ in range(10):
-            submitted2 = game_ref2.get()
-            if submitted2 and "Player 1" in submitted2 and "Player 2" in submitted2:
-                action1_2 = submitted2["Player 1"]["action"]
-                action2_2 = submitted2["Player 2"]["action"]
-                payoff2 = payoff_matrix[action1_2][action2_2]
+    # Period 2: Wait for both players to submit
+with st.spinner("⏳ Waiting for the other player to submit their action in Period 2..."):
+    max_wait = 10  # seconds
+    for _ in range(max_wait):
+        submitted2 = game_ref2.get()
+        if submitted2 and "Player 1" in submitted2 and "Player 2" in submitted2:
+            action1_2 = submitted2["Player 1"]["action"]
+            action2_2 = submitted2["Player 2"]["action"]
 
-                st.success(f"🎯 Period 2 Outcome: P1 = {action1_2}, P2 = {action2_2} → Payoffs = {payoff2}")
-                st.balloons()
-                st.markdown("✅ **Game Complete!** Thanks for playing.")
-                break
-            time.sleep(1)
-        else:
-            st.warning("⌛ The other player hasn't submitted their Period 2 action yet. Please wait and refresh.")
+            payoff_matrix = {
+                "A": {"X": (4, 3), "Y": (0, 0), "Z": (1, 4)},
+                "B": {"X": (0, 0), "Y": (2, 1), "Z": (0, 0)}
+            }
+            payoff2 = payoff_matrix[action1_2][action2_2]
+
+            st.success(f"🎯 Period 2 Outcome: P1 = {action1_2}, P2 = {action2_2} → Payoffs = {payoff2}")
+            st.balloons()
+            st.markdown("✅ **Game Complete!** Thanks for playing.")
+            break
+        time.sleep(1)
+    else:
+        st.warning("⌛ The other player hasn't submitted their Period 2 action yet. Please wait and refresh.")
+        st.balloons()
+
+        st.markdown("✅ **Game Complete!** Thanks for playing.")
 
 import matplotlib.pyplot as plt
 import pandas as pd
