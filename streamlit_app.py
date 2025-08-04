@@ -260,3 +260,51 @@ if completed_players >= total_players:
     plot_percentage_bar(p2_choices_r2, ["X", "Y", "Z"], "Player 2 Choices (Round 2)")
 else:
     st.info(f"⏳ Waiting for all participants to finish... ({completed_players}/{total_players} done)")
+
+from reportlab.lib.pagesizes import letter
+from reportlab.pdfgen import canvas
+from io import BytesIO
+import base64
+
+# Function to create PDF from game result
+def create_pdf(match_id, action1_1, action2_1, payoff1, action1_2, action2_2, payoff2):
+    buffer = BytesIO()
+    c = canvas.Canvas(buffer, pagesize=letter)
+    c.setFont("Helvetica", 12)
+
+    c.drawString(50, 750, f"🎲 Dynamic Game Results - Match: {match_id}")
+    c.drawString(50, 720, f"Period 1 → Player 1: {action1_1}, Player 2: {action2_1}, Payoffs: {payoff1}")
+    c.drawString(50, 700, f"Period 2 → Player 1: {action1_2}, Player 2: {action2_2}, Payoffs: {payoff2}")
+    c.drawString(50, 660, "✅ Thanks for participating!")
+
+    c.save()
+    buffer.seek(0)
+    return buffer
+
+# Only show this if game is complete
+if "game_complete" not in st.session_state:
+    st.session_state["game_complete"] = False
+
+if st.session_state.get("go_to_period2") and submitted2 and "Player 1" in submitted2 and "Player 2" in submitted2:
+    st.session_state["game_complete"] = True
+
+if st.session_state["game_complete"]:
+    if st.button("📄 Download Results as PDF"):
+        pdf_buffer = create_pdf(
+            match_id,
+            action1, action2, period1_payoff,
+            action1_2, action2_2, payoff2
+        )
+
+        b64 = base64.b64encode(pdf_buffer.read()).decode()
+        href = f'<a href="data:application/pdf;base64,{b64}" download="game_results_{match_id}.pdf">Click here to download PDF</a>'
+        st.markdown(href, unsafe_allow_html=True)
+
+    # Cleanup Firebase data
+    if st.button("🗑️ Delete Game Data"):
+        db.reference(f"games/{match_id}").delete()
+        db.reference(f"matches/{match_id}").delete()
+        db.reference(f"players/{pair[0]}").delete()
+        db.reference(f"players/{pair[1]}").delete()
+        st.success("🧹 Game data deleted from Firebase.")
+
