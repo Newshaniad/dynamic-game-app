@@ -37,6 +37,7 @@ if not firebase_admin._apps:
         'databaseURL': database_url
     })
 
+# BEGIN PDF
 # Function to create comprehensive PDF with all game data and graphs
 def create_comprehensive_pdf():
     import matplotlib.pyplot as plt
@@ -221,6 +222,7 @@ def create_comprehensive_pdf():
     buffer.seek(0)
     return buffer
    
+# END PDF
 
 # Password protection for admin functions only
 admin_password = st.text_input("Admin Password (for database management):", type="password")
@@ -519,6 +521,8 @@ if name:
                     st.session_state["payoff2"] = payoff2
                     st.session_state["pair"] = pair
 
+
+# PAGE RESULTS START
 import matplotlib.pyplot as plt
 import pandas as pd
 
@@ -592,6 +596,9 @@ elif expected_players > 0:
     st.info(f"⏳ Waiting for all participants to finish... ({completed_players}/{expected_players} players completed)")
 else:
     st.info("📈 Admin needs to set the expected number of players to display results.")
+
+# PAGE RESULTS END
+
 
 # Refresh Results Button (available to all users)
 st.subheader("🔄 Refresh Results")
