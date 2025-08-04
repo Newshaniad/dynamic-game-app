@@ -276,7 +276,7 @@ if admin_password == "admin123":
 
 
 if (db.reference("expected_players").get() or 0) <= 0:
-    return
+    exit()
 
 # Initialize variables to avoid undefined errors
 already_matched = False
