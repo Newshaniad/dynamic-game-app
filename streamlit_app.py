@@ -111,12 +111,6 @@ else:
         })
         st.success("✅ Your choice has been submitted!")
 
-    if st.button("Submit Choice"):
-        game_ref.child(role).set({
-            "action": choice,
-            "timestamp": time.time()
-        })
-        st.success("✅ Your choice has been submitted!")
 
     # Wait for both players to submit
 with st.spinner("⏳ Waiting for the other player to submit their action..."):
