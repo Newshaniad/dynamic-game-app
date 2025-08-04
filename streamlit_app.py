@@ -257,8 +257,9 @@ if name:
                         
                         if expected_players > 0 and completed_check >= expected_players:
                             st.success("🎉 All players have finished! Results are now available below.")
-                            time.sleep(2)  # Brief pause before rerun
-                            st.rerun()
+                            st.info("📊 Scroll down to see the complete game results and charts.")
+                            # Set a flag instead of immediate rerun to avoid infinite loops
+                            st.session_state["all_games_complete"] = True
                         break
                     time.sleep(1)
                 else:
@@ -300,6 +301,11 @@ for match_id, game_data in all_games.items():
         if "Player 1" in game_data["period1"] and "Player 2" in game_data["period1"] \
         and "Player 1" in game_data["period2"] and "Player 2" in game_data["period2"]:
             completed_players += 2  # Both players finished
+
+# Auto-refresh for users who haven't seen results yet (but not if they just completed)
+if expected_players > 0 and completed_players >= expected_players and not st.session_state.get("all_games_complete", False):
+    time.sleep(3)
+    st.rerun()
 
 # Show graph ONLY if all expected players completed both periods
 if expected_players > 0 and completed_players >= expected_players:
