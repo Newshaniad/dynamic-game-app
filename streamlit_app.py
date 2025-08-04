@@ -100,7 +100,7 @@ if name:
             if unmatched:
                 partner = unmatched[0]
                 pair = sorted([name, partner])
-                match_id = f"{pair[0]}vs{pair[1]}"
+                match_id = f"{pair[0]}_vs_{pair[1]}"
                 
                 # Double-check that the match doesn't already exist (race condition protection)
                 existing_match = match_ref.child(match_id).get()
