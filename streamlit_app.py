@@ -341,7 +341,7 @@ if name:
             if unmatched:
                 partner = unmatched[0]
                 pair = sorted([name, partner])
-                match_id = f"{pair[0]}vs{pair[1]}"
+                match_id = f"{pair[0]}_vs_{pair[1]}"
                 
                 # Double-check that the match doesn't already exist (race condition protection)
                 existing_match = match_ref.child(match_id).get()
@@ -370,7 +370,7 @@ if name:
 
     # ✅ Once matched, proceed to Period 1 gameplay
     if already_matched or role is not None:
-        match_id = match_id if already_matched else f"{pair[0]}vs{pair[1]}"
+        match_id = match_id if already_matched else f"{pair[0]}_vs_{pair[1]}"
         role = role if already_matched else ("Player 1" if pair[0] == name else "Player 2")
         game_ref = db.reference(f"games/{match_id}/period1")
 
@@ -424,7 +424,7 @@ if name:
 
             # Ensure match_id is properly set
             if not match_id and pair:
-                match_id = f"{pair[0]}vs{pair[1]}"
+                match_id = f"{pair[0]}_vs_{pair[1]}"
             period1_data = db.reference(f"games/{match_id}/period1").get()
             if period1_data and "Player 1" in period1_data and "Player 2" in period1_data:
                 action1 = period1_data["Player 1"]["action"]
