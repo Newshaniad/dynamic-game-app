@@ -611,6 +611,6 @@ if admin_password == "admin123":
         db.reference("games").delete()
         db.reference("matches").delete()
         db.reference("players").delete()
-        db.reference("expected_players").delete()
+        db.reference("expected_players").set(0)
         st.success("🧹 ALL game data deleted from Firebase.")
         st.warning("⚠ All players, matches, and game history have been permanently removed.")
