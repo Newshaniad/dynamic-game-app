@@ -96,7 +96,8 @@ if already_matched or "role" in locals():
     # Display available choices
     st.subheader("🎮 Period 1: Make Your Choice")
 
-    existing_action = game_ref.child(role).get()
+    existing_action = game_ref.child(role).get()  # ← This fetches their previously submitted choice
+
 if existing_action:
     st.info(f"✅ You already submitted: {existing_action['action']}")
 else:
