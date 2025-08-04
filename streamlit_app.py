@@ -37,6 +37,247 @@ if not firebase_admin._apps:
         'databaseURL': database_url
     })
 
+# Function to create comprehensive PDF with all game data and graphs
+def create_comprehensive_pdf():
+    import matplotlib.pyplot as plt
+    import tempfile
+    import os
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.units import inch
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, Table, TableStyle
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib import colors
+    
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=0.5*inch, bottomMargin=0.5*inch)
+    styles = getSampleStyleSheet()
+    story = []
+    
+    # Title
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Title'],
+        fontSize=24,
+        textColor=colors.darkblue,
+        spaceAfter=30
+    )
+    story.append(Paragraph("🎲 Dynamic Game Complete Results", title_style))
+    story.append(Spacer(1, 20))
+    
+    # Get all game data from Firebase
+    all_games = db.reference("games").get() or {}
+    expected_players = db.reference("expected_players").get() or 0
+    
+    # Summary section
+    story.append(Paragraph(f"<b>Game Summary</b>", styles['Heading2']))
+    story.append(Paragraph(f"Expected Players: {expected_players}", styles['Normal']))
+    story.append(Paragraph(f"Total Matches: {len(all_games)}", styles['Normal']))
+    story.append(Spacer(1, 20))
+    
+    # Individual match results
+    story.append(Paragraph("<b>Individual Match Results</b>", styles['Heading2']))
+    
+    # Create table data for all matches
+    table_data = [["Match ID", "Period 1", "Period 1 Payoffs", "Period 2", "Period 2 Payoffs"]]
+    
+    for match_id, game_data in all_games.items():
+        if "period1" in game_data and "period2" in game_data:
+            # Period 1
+            p1_action1 = game_data["period1"].get("Player 1", {}).get("action", "N/A")
+            p2_action1 = game_data["period1"].get("Player 2", {}).get("action", "N/A")
+            payoff_matrix = {
+                "A": {"X": (4, 3), "Y": (0, 0), "Z": (1, 4)},
+                "B": {"X": (0, 0), "Y": (2, 1), "Z": (0, 0)}
+            }
+            if p1_action1 != "N/A" and p2_action1 != "N/A":
+                payoff1 = payoff_matrix[p1_action1][p2_action1]
+            else:
+                payoff1 = "N/A"
+            
+            # Period 2
+            p1_action2 = game_data["period2"].get("Player 1", {}).get("action", "N/A")
+            p2_action2 = game_data["period2"].get("Player 2", {}).get("action", "N/A")
+            if p1_action2 != "N/A" and p2_action2 != "N/A":
+                payoff2 = payoff_matrix[p1_action2][p2_action2]
+            else:
+                payoff2 = "N/A"
+            
+            table_data.append([
+                match_id,
+                f"P1:{p1_action1}, P2:{p2_action1}",
+                str(payoff1),
+                f"P1:{p1_action2}, P2:{p2_action2}",
+                str(payoff2)
+            ])
+    
+    # Create and style the table
+    table = Table(table_data, colWidths=[1.5*inch, 1.5*inch, 1*inch, 1.5*inch, 1*inch])
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 10),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+        ('FONTSIZE', (0, 1), (-1, -1), 8),
+        ('GRID', (0, 0), (-1, -1), 1, colors.black)
+    ]))
+    
+    story.append(table)
+    story.append(Spacer(1, 30))
+    
+    # Generate charts and add to PDF
+    story.append(Paragraph("<b>Statistical Analysis</b>", styles['Heading2']))
+    
+    # Collect choice data
+    p1_choices_r1, p2_choices_r1 = [], []
+    p1_choices_r2, p2_choices_r2 = [], []
+    
+    for match in all_games.values():
+        if "period1" in match:
+            p1 = match["period1"].get("Player 1", {}).get("action")
+            p2 = match["period1"].get("Player 2", {}).get("action")
+            if p1: p1_choices_r1.append(p1)
+            if p2: p2_choices_r1.append(p2)
+        if "period2" in match:
+            p1 = match["period2"].get("Player 1", {}).get("action")
+            p2 = match["period2"].get("Player 2", {}).get("action")
+            if p1: p1_choices_r2.append(p1)
+            if p2: p2_choices_r2.append(p2)
+    
+    # Create temporary directory for chart images
+    temp_dir = tempfile.mkdtemp()
+    
+    def create_chart(choices, labels, title, filename):
+        if len(choices) > 0:
+            import pandas as pd
+            counts = pd.Series(choices).value_counts(normalize=True).reindex(labels, fill_value=0) * 100
+            fig, ax = plt.subplots(figsize=(8, 6))
+            counts.plot(kind='bar', ax=ax, color=['#1f77b4', '#ff7f0e', '#2ca02c'])
+            ax.set_title(title, fontsize=16, fontweight='bold')
+            ax.set_ylabel("Percentage (%)", fontsize=12)
+            ax.set_xlabel("Choice", fontsize=12)
+            ax.tick_params(rotation=0)
+            plt.tight_layout()
+            filepath = os.path.join(temp_dir, filename)
+            plt.savefig(filepath, dpi=300, bbox_inches='tight')
+            plt.close()
+            return filepath
+        return None
+    
+    # Generate charts
+    chart_files = []
+    if p1_choices_r1:
+        chart_files.append(create_chart(p1_choices_r1, ["A", "B"], "Player 1 Choices (Round 1)", "p1_r1.png"))
+    if p2_choices_r1:
+        chart_files.append(create_chart(p2_choices_r1, ["X", "Y", "Z"], "Player 2 Choices (Round 1)", "p2_r1.png"))
+    if p1_choices_r2:
+        chart_files.append(create_chart(p1_choices_r2, ["A", "B"], "Player 1 Choices (Round 2)", "p1_r2.png"))
+    if p2_choices_r2:
+        chart_files.append(create_chart(p2_choices_r2, ["X", "Y", "Z"], "Player 2 Choices (Round 2)", "p2_r2.png"))
+    
+    # Add charts to PDF
+    for chart_file in chart_files:
+        if chart_file and os.path.exists(chart_file):
+            story.append(Image(chart_file, width=6*inch, height=4*inch))
+            story.append(Spacer(1, 20))
+    
+    # Add payoff matrix reference
+    story.append(Paragraph("<b>Payoff Matrix Reference</b>", styles['Heading2']))
+    payoff_data = [
+        ["", "X", "Y", "Z"],
+        ["A", "(4, 3)", "(0, 0)", "(1, 4)"],
+        ["B", "(0, 0)", "(2, 1)", "(0, 0)"]
+    ]
+    payoff_table = Table(payoff_data, colWidths=[1*inch, 1*inch, 1*inch, 1*inch])
+    payoff_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+        ('BACKGROUND', (0, 0), (0, -1), colors.grey),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('TEXTCOLOR', (0, 0), (0, -1), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 12),
+        ('GRID', (0, 0), (-1, -1), 1, colors.black)
+    ]))
+    story.append(payoff_table)
+    story.append(Spacer(1, 20))
+    
+    story.append(Paragraph("Format: (Player 1 Payoff, Player 2 Payoff)", styles['Normal']))
+    story.append(Spacer(1, 20))
+    story.append(Paragraph("✅ Report generated automatically", styles['Normal']))
+    
+    # Build PDF
+    doc.build(story)
+    
+    # Cleanup temporary files
+    for chart_file in chart_files:
+        if chart_file and os.path.exists(chart_file):
+            os.remove(chart_file)
+    os.rmdir(temp_dir)
+    
+    buffer.seek(0)
+    return buffer
+   
+
+# Password protection for admin functions only
+admin_password = st.text_input("Admin Password (for database management):", type="password")
+
+if admin_password == "admin123":
+    st.header("🔒 Admin Section")
+    
+    # Set expected number of players
+    st.subheader("👥 Game Configuration")
+    current_expected = db.reference("expected_players").get() or 0
+    st.write(f"Current expected players: {current_expected}")
+    
+    new_expected_players = st.number_input(
+        "Set expected number of players:", 
+        min_value=0, 
+        max_value=100, 
+        value=current_expected,
+        step=2,
+        help="Must be an even number (players are paired)"
+    )
+    
+    if st.button("⚙ Update Expected Players"):
+        if new_expected_players % 2 == 0:  # Must be even for pairing
+            db.reference("expected_players").set(new_expected_players)
+            st.success(f"✅ Expected players set to {new_expected_players}")
+        else:
+            st.error("⚠ Number of players must be even (for pairing)")
+    
+    st.subheader("📄 Game Management")
+    
+    # PDF Download - Comprehensive report with all games and charts
+    if st.button("📄 Download Complete Game Report (PDF)"):
+        with st.spinner("Generating comprehensive PDF report with all game data and charts..."):
+            try:
+                pdf_buffer = create_comprehensive_pdf()
+                b64 = base64.b64encode(pdf_buffer.read()).decode()
+                href = f'<a href="data:application/pdf;base64,{b64}" download="complete_game_results.pdf">Click here to download Complete Game Report</a>'
+                st.markdown(href, unsafe_allow_html=True)
+                st.success("✅ Complete game report generated successfully!")
+            except Exception as e:
+                st.error(f"Error generating PDF: {str(e)}")
+                st.info("Please ensure all required libraries are installed.")
+    
+    # Database cleanup
+    if st.button("🗑 Delete ALL Game Data"):
+        # Delete all game data from Firebase
+        db.reference("games").delete()
+        db.reference("matches").delete()
+        db.reference("players").delete()
+        db.reference("expected_players").set(0)
+        st.success("🧹 ALL game data deleted from Firebase.")
+        st.warning("⚠ All players, matches, and game history have been permanently removed.")
+
+
+if (db.reference("expected_players").get() or 0) <= 0:
+    return
+
 # Initialize variables to avoid undefined errors
 already_matched = False
 match_id = None
@@ -375,242 +616,3 @@ if st.button("🔄 Check for Updated Results"):
         st.info(f"⏳ Still waiting... ({fresh_completed_players}/{fresh_expected_players} players completed)")
     else:
         st.warning("⚠ Admin needs to set the expected number of players first.")
-
-
-
-# Function to create comprehensive PDF with all game data and graphs
-def create_comprehensive_pdf():
-    import matplotlib.pyplot as plt
-    import tempfile
-    import os
-    from reportlab.lib.pagesizes import letter
-    from reportlab.lib.units import inch
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, Table, TableStyle
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from reportlab.lib import colors
-    
-    buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=0.5*inch, bottomMargin=0.5*inch)
-    styles = getSampleStyleSheet()
-    story = []
-    
-    # Title
-    title_style = ParagraphStyle(
-        'CustomTitle',
-        parent=styles['Title'],
-        fontSize=24,
-        textColor=colors.darkblue,
-        spaceAfter=30
-    )
-    story.append(Paragraph("🎲 Dynamic Game Complete Results", title_style))
-    story.append(Spacer(1, 20))
-    
-    # Get all game data from Firebase
-    all_games = db.reference("games").get() or {}
-    expected_players = db.reference("expected_players").get() or 0
-    
-    # Summary section
-    story.append(Paragraph(f"<b>Game Summary</b>", styles['Heading2']))
-    story.append(Paragraph(f"Expected Players: {expected_players}", styles['Normal']))
-    story.append(Paragraph(f"Total Matches: {len(all_games)}", styles['Normal']))
-    story.append(Spacer(1, 20))
-    
-    # Individual match results
-    story.append(Paragraph("<b>Individual Match Results</b>", styles['Heading2']))
-    
-    # Create table data for all matches
-    table_data = [["Match ID", "Period 1", "Period 1 Payoffs", "Period 2", "Period 2 Payoffs"]]
-    
-    for match_id, game_data in all_games.items():
-        if "period1" in game_data and "period2" in game_data:
-            # Period 1
-            p1_action1 = game_data["period1"].get("Player 1", {}).get("action", "N/A")
-            p2_action1 = game_data["period1"].get("Player 2", {}).get("action", "N/A")
-            payoff_matrix = {
-                "A": {"X": (4, 3), "Y": (0, 0), "Z": (1, 4)},
-                "B": {"X": (0, 0), "Y": (2, 1), "Z": (0, 0)}
-            }
-            if p1_action1 != "N/A" and p2_action1 != "N/A":
-                payoff1 = payoff_matrix[p1_action1][p2_action1]
-            else:
-                payoff1 = "N/A"
-            
-            # Period 2
-            p1_action2 = game_data["period2"].get("Player 1", {}).get("action", "N/A")
-            p2_action2 = game_data["period2"].get("Player 2", {}).get("action", "N/A")
-            if p1_action2 != "N/A" and p2_action2 != "N/A":
-                payoff2 = payoff_matrix[p1_action2][p2_action2]
-            else:
-                payoff2 = "N/A"
-            
-            table_data.append([
-                match_id,
-                f"P1:{p1_action1}, P2:{p2_action1}",
-                str(payoff1),
-                f"P1:{p1_action2}, P2:{p2_action2}",
-                str(payoff2)
-            ])
-    
-    # Create and style the table
-    table = Table(table_data, colWidths=[1.5*inch, 1.5*inch, 1*inch, 1.5*inch, 1*inch])
-    table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, 0), 10),
-        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-        ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
-        ('FONTSIZE', (0, 1), (-1, -1), 8),
-        ('GRID', (0, 0), (-1, -1), 1, colors.black)
-    ]))
-    
-    story.append(table)
-    story.append(Spacer(1, 30))
-    
-    # Generate charts and add to PDF
-    story.append(Paragraph("<b>Statistical Analysis</b>", styles['Heading2']))
-    
-    # Collect choice data
-    p1_choices_r1, p2_choices_r1 = [], []
-    p1_choices_r2, p2_choices_r2 = [], []
-    
-    for match in all_games.values():
-        if "period1" in match:
-            p1 = match["period1"].get("Player 1", {}).get("action")
-            p2 = match["period1"].get("Player 2", {}).get("action")
-            if p1: p1_choices_r1.append(p1)
-            if p2: p2_choices_r1.append(p2)
-        if "period2" in match:
-            p1 = match["period2"].get("Player 1", {}).get("action")
-            p2 = match["period2"].get("Player 2", {}).get("action")
-            if p1: p1_choices_r2.append(p1)
-            if p2: p2_choices_r2.append(p2)
-    
-    # Create temporary directory for chart images
-    temp_dir = tempfile.mkdtemp()
-    
-    def create_chart(choices, labels, title, filename):
-        if len(choices) > 0:
-            import pandas as pd
-            counts = pd.Series(choices).value_counts(normalize=True).reindex(labels, fill_value=0) * 100
-            fig, ax = plt.subplots(figsize=(8, 6))
-            counts.plot(kind='bar', ax=ax, color=['#1f77b4', '#ff7f0e', '#2ca02c'])
-            ax.set_title(title, fontsize=16, fontweight='bold')
-            ax.set_ylabel("Percentage (%)", fontsize=12)
-            ax.set_xlabel("Choice", fontsize=12)
-            ax.tick_params(rotation=0)
-            plt.tight_layout()
-            filepath = os.path.join(temp_dir, filename)
-            plt.savefig(filepath, dpi=300, bbox_inches='tight')
-            plt.close()
-            return filepath
-        return None
-    
-    # Generate charts
-    chart_files = []
-    if p1_choices_r1:
-        chart_files.append(create_chart(p1_choices_r1, ["A", "B"], "Player 1 Choices (Round 1)", "p1_r1.png"))
-    if p2_choices_r1:
-        chart_files.append(create_chart(p2_choices_r1, ["X", "Y", "Z"], "Player 2 Choices (Round 1)", "p2_r1.png"))
-    if p1_choices_r2:
-        chart_files.append(create_chart(p1_choices_r2, ["A", "B"], "Player 1 Choices (Round 2)", "p1_r2.png"))
-    if p2_choices_r2:
-        chart_files.append(create_chart(p2_choices_r2, ["X", "Y", "Z"], "Player 2 Choices (Round 2)", "p2_r2.png"))
-    
-    # Add charts to PDF
-    for chart_file in chart_files:
-        if chart_file and os.path.exists(chart_file):
-            story.append(Image(chart_file, width=6*inch, height=4*inch))
-            story.append(Spacer(1, 20))
-    
-    # Add payoff matrix reference
-    story.append(Paragraph("<b>Payoff Matrix Reference</b>", styles['Heading2']))
-    payoff_data = [
-        ["", "X", "Y", "Z"],
-        ["A", "(4, 3)", "(0, 0)", "(1, 4)"],
-        ["B", "(0, 0)", "(2, 1)", "(0, 0)"]
-    ]
-    payoff_table = Table(payoff_data, colWidths=[1*inch, 1*inch, 1*inch, 1*inch])
-    payoff_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
-        ('BACKGROUND', (0, 0), (0, -1), colors.grey),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-        ('TEXTCOLOR', (0, 0), (0, -1), colors.whitesmoke),
-        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, -1), 12),
-        ('GRID', (0, 0), (-1, -1), 1, colors.black)
-    ]))
-    story.append(payoff_table)
-    story.append(Spacer(1, 20))
-    
-    story.append(Paragraph("Format: (Player 1 Payoff, Player 2 Payoff)", styles['Normal']))
-    story.append(Spacer(1, 20))
-    story.append(Paragraph("✅ Report generated automatically", styles['Normal']))
-    
-    # Build PDF
-    doc.build(story)
-    
-    # Cleanup temporary files
-    for chart_file in chart_files:
-        if chart_file and os.path.exists(chart_file):
-            os.remove(chart_file)
-    os.rmdir(temp_dir)
-    
-    buffer.seek(0)
-    return buffer
-   
-
-# Password protection for admin functions only
-admin_password = st.text_input("Admin Password (for database management):", type="password")
-
-if admin_password == "admin123":
-    st.header("🔒 Admin Section")
-    
-    # Set expected number of players
-    st.subheader("👥 Game Configuration")
-    current_expected = db.reference("expected_players").get() or 0
-    st.write(f"Current expected players: {current_expected}")
-    
-    new_expected_players = st.number_input(
-        "Set expected number of players:", 
-        min_value=0, 
-        max_value=100, 
-        value=current_expected,
-        step=2,
-        help="Must be an even number (players are paired)"
-    )
-    
-    if st.button("⚙ Update Expected Players"):
-        if new_expected_players % 2 == 0:  # Must be even for pairing
-            db.reference("expected_players").set(new_expected_players)
-            st.success(f"✅ Expected players set to {new_expected_players}")
-        else:
-            st.error("⚠ Number of players must be even (for pairing)")
-    
-    st.subheader("📄 Game Management")
-    
-    # PDF Download - Comprehensive report with all games and charts
-    if st.button("📄 Download Complete Game Report (PDF)"):
-        with st.spinner("Generating comprehensive PDF report with all game data and charts..."):
-            try:
-                pdf_buffer = create_comprehensive_pdf()
-                b64 = base64.b64encode(pdf_buffer.read()).decode()
-                href = f'<a href="data:application/pdf;base64,{b64}" download="complete_game_results.pdf">Click here to download Complete Game Report</a>'
-                st.markdown(href, unsafe_allow_html=True)
-                st.success("✅ Complete game report generated successfully!")
-            except Exception as e:
-                st.error(f"Error generating PDF: {str(e)}")
-                st.info("Please ensure all required libraries are installed.")
-    
-    # Database cleanup
-    if st.button("🗑 Delete ALL Game Data"):
-        # Delete all game data from Firebase
-        db.reference("games").delete()
-        db.reference("matches").delete()
-        db.reference("players").delete()
-        db.reference("expected_players").set(0)
-        st.success("🧹 ALL game data deleted from Firebase.")
-        st.warning("⚠ All players, matches, and game history have been permanently removed.")
