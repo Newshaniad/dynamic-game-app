@@ -71,43 +71,61 @@ if name:
             break
 
     if not already_matched:
-        # Get fresh data to avoid race conditions
-        players_data = db.reference("players").get() or {}
-        match_data = db.reference("matches").get() or {}
+        # Check if all expected players have finished playing
+        expected_players_ref = db.reference("expected_players")
+        expected_players = expected_players_ref.get() or 0
+        all_games = db.reference("games").get() or {}
         
-        unmatched = [p for p in players_data.keys()
-                     if not any(p in m.get("players", []) for m in match_data.values())
-                     and p != name]
-
-        if unmatched:
-            partner = unmatched[0]
-            pair = sorted([name, partner])
-            match_id = f"{pair[0]}vs{pair[1]}"
-            
-            # Double-check that the match doesn't already exist (race condition protection)
-            existing_match = match_ref.child(match_id).get()
-            if not existing_match:
-                match_ref.child(match_id).set({"players": pair})
-                role = "Player 1" if pair[0] == name else "Player 2"
-                st.success(f"🎮 Hello, {name}! You are {role} in match {match_id}")
-            else:
-                # Match was created by another player, check our role
-                role = "Player 1" if existing_match["players"][0] == name else "Player 2"
-                st.success(f"🎮 Hello, {name}! You are {role} in match {match_id}")
-                already_matched = True
+        # Count completed players
+        completed_players = 0
+        for match_id, game_data in all_games.items():
+            if "period1" in game_data and "period2" in game_data:
+                if "Player 1" in game_data["period1"] and "Player 2" in game_data["period1"] \
+                and "Player 1" in game_data["period2"] and "Player 2" in game_data["period2"]:
+                    completed_players += 2
+        
+        # If all expected players have completed, no more matches allowed
+        if expected_players > 0 and completed_players >= expected_players:
+            st.info("🎯 All games have been completed! No more matches are available.")
+            st.info("📊 Check the Game Summary section below to see the results.")
         else:
-            st.info("⏳ Waiting for another player to join...")
-            with st.spinner("Checking for match..."):
-                timeout = 30
-                for i in range(timeout):
-                    match_data = match_ref.get() or {}
-                    for match_id, info in match_data.items():
-                        if name in info.get("players", []):
-                            role = "Player 1" if info["players"][0] == name else "Player 2"
-                            st.success(f"🎮 Hello, {name}! You are {role} in match {match_id}")
-                            already_matched = True
-                            st.rerun()
-                    time.sleep(2)
+            # Get fresh data to avoid race conditions
+            players_data = db.reference("players").get() or {}
+            match_data = db.reference("matches").get() or {}
+            
+            unmatched = [p for p in players_data.keys()
+                         if not any(p in m.get("players", []) for m in match_data.values())
+                         and p != name]
+
+            if unmatched:
+                partner = unmatched[0]
+                pair = sorted([name, partner])
+                match_id = f"{pair[0]}vs{pair[1]}"
+                
+                # Double-check that the match doesn't already exist (race condition protection)
+                existing_match = match_ref.child(match_id).get()
+                if not existing_match:
+                    match_ref.child(match_id).set({"players": pair})
+                    role = "Player 1" if pair[0] == name else "Player 2"
+                    st.success(f"🎮 Hello, {name}! You are {role} in match {match_id}")
+                else:
+                    # Match was created by another player, check our role
+                    role = "Player 1" if existing_match["players"][0] == name else "Player 2"
+                    st.success(f"🎮 Hello, {name}! You are {role} in match {match_id}")
+                    already_matched = True
+            else:
+                st.info("⏳ Waiting for another player to join...")
+                with st.spinner("Checking for match..."):
+                    timeout = 30
+                    for i in range(timeout):
+                        match_data = match_ref.get() or {}
+                        for match_id, info in match_data.items():
+                            if name in info.get("players", []):
+                                role = "Player 1" if info["players"][0] == name else "Player 2"
+                                st.success(f"🎮 Hello, {name}! You are {role} in match {match_id}")
+                                already_matched = True
+                                st.rerun()
+                        time.sleep(2)
 
     # ✅ Once matched, proceed to Period 1 gameplay
     if already_matched or role is not None:
@@ -215,6 +233,32 @@ if name:
                         st.success(f"🎯 Period 2 Outcome: P1 = {action1_2}, P2 = {action2_2} → Payoffs = {payoff2}")
                         st.balloons()
                         st.markdown("✅ Game Complete! Thanks for playing.")
+                        
+                        # Initialize variables for PDF functionality  
+                        st.session_state["game_complete"] = True
+                        st.session_state["match_id"] = match_id
+                        st.session_state["action1"] = action1
+                        st.session_state["action2"] = action2
+                        st.session_state["period1_payoff"] = period1_payoff
+                        st.session_state["action1_2"] = action1_2
+                        st.session_state["action2_2"] = action2_2
+                        st.session_state["payoff2"] = payoff2
+                        st.session_state["pair"] = pair
+                        
+                        # Check if all players have finished and trigger rerun for results display
+                        expected_players = db.reference("expected_players").get() or 0
+                        all_games_check = db.reference("games").get() or {}
+                        completed_check = 0
+                        for mid, gdata in all_games_check.items():
+                            if "period1" in gdata and "period2" in gdata:
+                                if "Player 1" in gdata["period1"] and "Player 2" in gdata["period1"] \
+                                and "Player 1" in gdata["period2"] and "Player 2" in gdata["period2"]:
+                                    completed_check += 2
+                        
+                        if expected_players > 0 and completed_check >= expected_players:
+                            st.success("🎉 All players have finished! Results are now available below.")
+                            time.sleep(2)  # Brief pause before rerun
+                            st.rerun()
                         break
                     time.sleep(1)
                 else:
