@@ -9,7 +9,7 @@ from reportlab.pdfgen import canvas
 from io import BytesIO
 import base64
 
-st.set_page_config(page_title="🎲 2-Period Dynamic Game")
+st.set_page_config(page_title="🎲 2-Period Dynamic Game.")
 
 st.title("🎲 Multiplayer 2-Period Dynamic Game")
 
