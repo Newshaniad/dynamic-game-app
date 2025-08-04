@@ -95,9 +95,8 @@ if already_matched or "role" in locals():
 
     # Display available choices
     st.subheader("🎮 Period 1: Make Your Choice")
-
-  existing_action = game_ref.child(role).get()  # ← This fetches their previously submitted choice
-
+    
+existing_action = game_ref.child(role).get()
 if existing_action:
     st.info(f"✅ You already submitted: {existing_action['action']}")
 else:
@@ -112,8 +111,7 @@ else:
             "timestamp": time.time()
         })
         st.success("✅ Your choice has been submitted!")
-
-
+        
     # Wait for both players to submit
 with st.spinner("⏳ Waiting for the other player to submit their action..."):
     max_wait = 10  # seconds
