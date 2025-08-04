@@ -245,3 +245,51 @@ if all_games:
     st.pyplot(fig)
 else:
     st.info("No completed games yet to display.")
+import matplotlib.pyplot as plt
+import pandas as pd
+
+st.header("📊 Game Summary: Choices by All Participants")
+
+# Fetch all game data
+all_games = db.reference("games").get()
+
+if all_games:
+    p1_choices_r1 = []
+    p2_choices_r1 = []
+    p1_choices_r2 = []
+    p2_choices_r2 = []
+
+    for match in all_games.values():
+        # Period 1
+        if "period1" in match:
+            p1 = match["period1"].get("Player 1", {}).get("action")
+            p2 = match["period1"].get("Player 2", {}).get("action")
+            if p1: p1_choices_r1.append(p1)
+            if p2: p2_choices_r1.append(p2)
+        # Period 2
+        if "period2" in match:
+            p1 = match["period2"].get("Player 1", {}).get("action")
+            p2 = match["period2"].get("Player 2", {}).get("action")
+            if p1: p1_choices_r2.append(p1)
+            if p2: p2_choices_r2.append(p2)
+
+    def plot_percentage_bar(choices, labels, title):
+        total = len(choices)
+        counts = pd.Series(choices).value_counts(normalize=True).reindex(labels, fill_value=0) * 100
+        fig, ax = plt.subplots()
+        counts.plot(kind='bar', ax=ax)
+        ax.set_title(title)
+        ax.set_ylabel("Percentage (%)")
+        ax.set_xlabel("Choice")
+        st.pyplot(fig)
+
+    st.subheader("Round 1")
+    plot_percentage_bar(p1_choices_r1, ["A", "B"], "Player 1 Choices (Round 1)")
+    plot_percentage_bar(p2_choices_r1, ["X", "Y", "Z"], "Player 2 Choices (Round 1)")
+
+    st.subheader("Round 2")
+    plot_percentage_bar(p1_choices_r2, ["A", "B"], "Player 1 Choices (Round 2)")
+    plot_percentage_bar(p2_choices_r2, ["X", "Y", "Z"], "Player 2 Choices (Round 2)")
+
+else:
+    st.warning("No game data available yet to show graphs.")
