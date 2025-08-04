@@ -87,7 +87,6 @@ if name:
                     time.sleep(2)
 
 # ✅ Once matched, proceed to Period 1 gameplay
-already_matched = False
 if already_matched or "role" in locals():
     match_id = match_id if already_matched else f"{pair[0]}_vs_{pair[1]}"
     role = role if already_matched else ("Player 1" if pair[0] == name else "Player 2")
