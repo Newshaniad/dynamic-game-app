@@ -352,6 +352,30 @@ elif expected_players > 0:
 else:
     st.info("📈 Admin needs to set the expected number of players to display results.")
 
+# Refresh Results Button (available to all users)
+st.subheader("🔄 Refresh Results")
+if st.button("🔄 Check for Updated Results"):
+    # Re-fetch data from Firebase
+    fresh_expected_players = db.reference("expected_players").get() or 0
+    fresh_all_games = db.reference("games").get() or {}
+    
+    # Recount completed players
+    fresh_completed_players = 0
+    for match_id, game_data in fresh_all_games.items():
+        if "period1" in game_data and "period2" in game_data:
+            if "Player 1" in game_data["period1"] and "Player 2" in game_data["period1"] \
+            and "Player 1" in game_data["period2"] and "Player 2" in game_data["period2"]:
+                fresh_completed_players += 2
+    
+    # Check if all players have finished
+    if fresh_expected_players > 0 and fresh_completed_players >= fresh_expected_players:
+        st.success(f"✅ All {fresh_expected_players} players have completed! Refreshing results...")
+        st.rerun()  # Refresh the page to show updated results
+    elif fresh_expected_players > 0:
+        st.info(f"⏳ Still waiting... ({fresh_completed_players}/{fresh_expected_players} players completed)")
+    else:
+        st.warning("⚠ Admin needs to set the expected number of players first.")
+
 
 
 # Function to create PDF from game result
