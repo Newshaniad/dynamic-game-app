@@ -239,13 +239,16 @@ import pandas as pd
 # Public Game Summary (visible to everyone)
 st.header("📊 Game Summary")
 
+# Get expected number of players from Firebase (set by admin)
+expected_players_ref = db.reference("expected_players")
+expected_players = expected_players_ref.get() or 0
+
 # Fetch all players and all matches
 players = db.reference("players").get() or {}
 matches = db.reference("matches").get() or {}
 all_games = db.reference("games").get() or {}
 
 # Determine how many players are in completed matches
-total_players = len(players)
 completed_players = 0
 
 for match_id, game_data in all_games.items():
@@ -254,9 +257,9 @@ for match_id, game_data in all_games.items():
         and "Player 1" in game_data["period2"] and "Player 2" in game_data["period2"]:
             completed_players += 2  # Both players finished
 
-# Show graph ONLY if all players completed both periods
-if completed_players >= total_players and total_players > 0:
-    st.success("✅ All players completed both rounds. Showing results...")
+# Show graph ONLY if all expected players completed both periods
+if expected_players > 0 and completed_players >= expected_players:
+    st.success(f"✅ All {expected_players} players completed both rounds. Showing results...")
 
     p1_choices_r1, p2_choices_r1 = [], []
     p1_choices_r2, p2_choices_r2 = [], []
@@ -294,10 +297,10 @@ if completed_players >= total_players and total_players > 0:
     st.subheader("Round 2")
     plot_percentage_bar(p1_choices_r2, ["A", "B"], "Player 1 Choices (Round 2)")
     plot_percentage_bar(p2_choices_r2, ["X", "Y", "Z"], "Player 2 Choices (Round 2)")
-elif total_players > 0:
-    st.info(f"⏳ Waiting for all participants to finish... ({completed_players}/{total_players} done)")
+elif expected_players > 0:
+    st.info(f"⏳ Waiting for all participants to finish... ({completed_players}/{expected_players} players completed)")
 else:
-    st.info("🎮 No games have been played yet. Start a game to see results here!")
+    st.info("📈 Admin needs to set the expected number of players to display results.")
 
 
 
@@ -323,6 +326,29 @@ admin_password = st.text_input("Admin Password (for database management):", type
 if admin_password == "admin123":
     st.header("🔒 Admin Section")
     
+    # Set expected number of players
+    st.subheader("👥 Game Configuration")
+    current_expected = db.reference("expected_players").get() or 0
+    st.write(f"Current expected players: {current_expected}")
+    
+    new_expected_players = st.number_input(
+        "Set expected number of players:", 
+        min_value=0, 
+        max_value=100, 
+        value=current_expected,
+        step=2,
+        help="Must be an even number (players are paired)"
+    )
+    
+    if st.button("⚙ Update Expected Players"):
+        if new_expected_players % 2 == 0:  # Must be even for pairing
+            db.reference("expected_players").set(new_expected_players)
+            st.success(f"✅ Expected players set to {new_expected_players}")
+        else:
+            st.error("⚠ Number of players must be even (for pairing)")
+    
+    st.subheader("📄 Game Management")
+    
     # PDF Download for completed games
     if st.session_state.get("game_complete", False):
         if st.button("📄 Download Results as PDF"):
@@ -342,5 +368,6 @@ if admin_password == "admin123":
         db.reference("games").delete()
         db.reference("matches").delete()
         db.reference("players").delete()
+        db.reference("expected_players").delete()
         st.success("🧹 ALL game data deleted from Firebase.")
         st.warning("⚠ All players, matches, and game history have been permanently removed.")
