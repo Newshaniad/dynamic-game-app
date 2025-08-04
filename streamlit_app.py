@@ -85,7 +85,7 @@ if name:
                     completed_players += 2
         
         # If all expected players have completed, no more matches allowed
-        if expected_players > 0 and completed_players >= expected_players:
+        if expected_players >= 0 and completed_players >= expected_players:
             st.info("🎯 All games have been completed! No more matches are available.")
             st.info("📊 Check the Game Summary section below to see the results.")
         else:
