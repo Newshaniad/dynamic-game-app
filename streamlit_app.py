@@ -328,9 +328,10 @@ if admin_password == "admin123":
         b64 = base64.b64encode(pdf_buffer.read()).decode()
         href = f'<a href="data:application/pdf;base64,{b64}" download="game_results_{st.session_state["match_id"]}.pdf">Click here to download PDF</a>'
         st.markdown(href, unsafe_allow_html=True)
-    if st.button("🗑 Delete Game Data"):
-        db.reference(f"games/{st.session_state['match_id']}").delete()
-        db.reference(f"matches/{st.session_state['match_id']}").delete()
-        db.reference(f"players/{st.session_state['pair'][0]}").delete()
-        db.reference(f"players/{st.session_state['pair'][1]}").delete()
-        st.success("🧹 Game data deleted from Firebase.")
+    if st.button("🗑 Delete ALL Game Data"):
+        # Delete all game data from Firebase
+        db.reference("games").delete()
+        db.reference("matches").delete()
+        db.reference("players").delete()
+        st.success("🧹 ALL game data deleted from Firebase.")
+        st.warning("⚠ All players, matches, and game history have been permanently removed.")
