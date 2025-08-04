@@ -96,17 +96,25 @@ if already_matched or "role" in locals():
     # Display available choices
     st.subheader("🎮 Period 1: Make Your Choice")
 
-    existing_action = game_ref.child(role).get()  # ← THIS MUST come before the if-statement below
+    # ✅ Ensure match_id, role, and game_ref are set before this block
+match_id = match_id if already_matched else f"{pair[0]}_vs_{pair[1]}"
+role = role if already_matched else ("Player 1" if pair[0] == name else "Player 2")
+game_ref = db.reference(f"games/{match_id}/period1")
 
-if existing_action:
+# ✅ Check if the player has already submitted their choice
+existing_action = game_ref.child(role).get()
+
+st.subheader("🎮 Period 1: Make Your Choice")
+
+if existing_action and "action" in existing_action:
     st.info(f"✅ You already submitted: {existing_action['action']}")
 else:
     if role == "Player 1":
-        choice = st.radio("Choose your action:", ["A", "B"])
+        choice = st.radio("Choose your action:", ["A", "B"], key="p1_choice")
     else:
-        choice = st.radio("Choose your action:", ["X", "Y", "Z"])
+        choice = st.radio("Choose your action:", ["X", "Y", "Z"], key="p2_choice")
 
-    if st.button("Submit Choice"):
+    if st.button("Submit Choice", key="submit_choice"):
         game_ref.child(role).set({
             "action": choice,
             "timestamp": time.time()
