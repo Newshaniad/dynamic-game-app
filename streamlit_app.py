@@ -4,6 +4,10 @@ from firebase_admin import credentials, db
 import json
 import time
 import random
+from reportlab.lib.pagesizes import letter
+from reportlab.pdfgen import canvas
+from io import BytesIO
+import base64
 
 st.set_page_config(page_title="🎲 2-Period Dynamic Game")
 
@@ -294,10 +298,7 @@ if admin_password == "admin123":
     else:
         st.info(f"⏳ Waiting for all participants to finish... ({completed_players}/{total_players} done)")
 
-from reportlab.lib.pagesizes import letter
-from reportlab.pdfgen import canvas
-from io import BytesIO
-import base64
+
 
 # Function to create PDF from game result
 def create_pdf(match_id, action1_1, action2_1, payoff1, action1_2, action2_2, payoff2):
@@ -313,9 +314,10 @@ def create_pdf(match_id, action1_1, action2_1, payoff1, action1_2, action2_2, pa
     c.save()
     buffer.seek(0)
     return buffer
+   
 
-# PDF and cleanup functionality (available to all users)
-if st.session_state.get("game_complete", False):
+# Password-protected cleanup functionality
+if admin_password == "admin123":
     if st.button("📄 Download Results as PDF"):
         pdf_buffer = create_pdf(
             st.session_state["match_id"],
@@ -326,9 +328,6 @@ if st.session_state.get("game_complete", False):
         b64 = base64.b64encode(pdf_buffer.read()).decode()
         href = f'<a href="data:application/pdf;base64,{b64}" download="game_results_{st.session_state["match_id"]}.pdf">Click here to download PDF</a>'
         st.markdown(href, unsafe_allow_html=True)
-
-# Password-protected cleanup functionality
-if admin_password == "admin123" and st.session_state.get("game_complete", False):
     if st.button("🗑 Delete Game Data"):
         db.reference(f"games/{st.session_state['match_id']}").delete()
         db.reference(f"matches/{st.session_state['match_id']}").delete()
