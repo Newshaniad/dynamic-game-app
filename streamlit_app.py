@@ -236,50 +236,47 @@ if name:
 import matplotlib.pyplot as plt
 import pandas as pd
 
-# Password protection for admin functions
-admin_password = st.text_input("Admin Password (for charts and database cleanup):", type="password")
+# Public Game Summary (visible to everyone)
+st.header("📊 Game Summary")
 
-if admin_password == "admin123":
-    st.header("📊 Game Summary")
+# Fetch all players and all matches
+players = db.reference("players").get() or {}
+matches = db.reference("matches").get() or {}
+all_games = db.reference("games").get() or {}
 
-    # Fetch all players and all matches
-    players = db.reference("players").get() or {}
-    matches = db.reference("matches").get() or {}
-    all_games = db.reference("games").get() or {}
+# Determine how many players are in completed matches
+total_players = len(players)
+completed_players = 0
 
-    # Determine how many players are in completed matches
-    total_players = len(players)
-    completed_players = 0
+for match_id, game_data in all_games.items():
+    if "period1" in game_data and "period2" in game_data:
+        if "Player 1" in game_data["period1"] and "Player 2" in game_data["period1"] \
+        and "Player 1" in game_data["period2"] and "Player 2" in game_data["period2"]:
+            completed_players += 2  # Both players finished
 
-    for match_id, game_data in all_games.items():
-        if "period1" in game_data and "period2" in game_data:
-            if "Player 1" in game_data["period1"] and "Player 2" in game_data["period1"] \
-            and "Player 1" in game_data["period2"] and "Player 2" in game_data["period2"]:
-                completed_players += 2  # Both players finished
+# Show graph ONLY if all players completed both periods
+if completed_players >= total_players and total_players > 0:
+    st.success("✅ All players completed both rounds. Showing results...")
 
-    # Show graph ONLY if all players completed both periods
-    if completed_players >= total_players:
-        st.success("✅ All players completed both rounds. Showing results...")
+    p1_choices_r1, p2_choices_r1 = [], []
+    p1_choices_r2, p2_choices_r2 = [], []
 
-        p1_choices_r1, p2_choices_r1 = [], []
-        p1_choices_r2, p2_choices_r2 = [], []
+    for match in all_games.values():
+        # Round 1
+        if "period1" in match:
+            p1 = match["period1"].get("Player 1", {}).get("action")
+            p2 = match["period1"].get("Player 2", {}).get("action")
+            if p1: p1_choices_r1.append(p1)
+            if p2: p2_choices_r1.append(p2)
+        # Round 2
+        if "period2" in match:
+            p1 = match["period2"].get("Player 1", {}).get("action")
+            p2 = match["period2"].get("Player 2", {}).get("action")
+            if p1: p1_choices_r2.append(p1)
+            if p2: p2_choices_r2.append(p2)
 
-        for match in all_games.values():
-            # Round 1
-            if "period1" in match:
-                p1 = match["period1"].get("Player 1", {}).get("action")
-                p2 = match["period1"].get("Player 2", {}).get("action")
-                if p1: p1_choices_r1.append(p1)
-                if p2: p2_choices_r1.append(p2)
-            # Round 2
-            if "period2" in match:
-                p1 = match["period2"].get("Player 1", {}).get("action")
-                p2 = match["period2"].get("Player 2", {}).get("action")
-                if p1: p1_choices_r2.append(p1)
-                if p2: p2_choices_r2.append(p2)
-
-        def plot_percentage_bar(choices, labels, title):
-            total = len(choices)
+    def plot_percentage_bar(choices, labels, title):
+        if len(choices) > 0:
             counts = pd.Series(choices).value_counts(normalize=True).reindex(labels, fill_value=0) * 100
             fig, ax = plt.subplots()
             counts.plot(kind='bar', ax=ax)
@@ -287,16 +284,20 @@ if admin_password == "admin123":
             ax.set_ylabel("Percentage (%)")
             ax.set_xlabel("Choice")
             st.pyplot(fig)
+        else:
+            st.write(f"No data available for {title}")
 
-        st.subheader("Round 1")
-        plot_percentage_bar(p1_choices_r1, ["A", "B"], "Player 1 Choices (Round 1)")
-        plot_percentage_bar(p2_choices_r1, ["X", "Y", "Z"], "Player 2 Choices (Round 1)")
+    st.subheader("Round 1")
+    plot_percentage_bar(p1_choices_r1, ["A", "B"], "Player 1 Choices (Round 1)")
+    plot_percentage_bar(p2_choices_r1, ["X", "Y", "Z"], "Player 2 Choices (Round 1)")
 
-        st.subheader("Round 2")
-        plot_percentage_bar(p1_choices_r2, ["A", "B"], "Player 1 Choices (Round 2)")
-        plot_percentage_bar(p2_choices_r2, ["X", "Y", "Z"], "Player 2 Choices (Round 2)")
-    else:
-        st.info(f"⏳ Waiting for all participants to finish... ({completed_players}/{total_players} done)")
+    st.subheader("Round 2")
+    plot_percentage_bar(p1_choices_r2, ["A", "B"], "Player 1 Choices (Round 2)")
+    plot_percentage_bar(p2_choices_r2, ["X", "Y", "Z"], "Player 2 Choices (Round 2)")
+elif total_players > 0:
+    st.info(f"⏳ Waiting for all participants to finish... ({completed_players}/{total_players} done)")
+else:
+    st.info("🎮 No games have been played yet. Start a game to see results here!")
 
 
 
@@ -316,18 +317,26 @@ def create_pdf(match_id, action1_1, action2_1, payoff1, action1_2, action2_2, pa
     return buffer
    
 
-# Password-protected cleanup functionality
-if admin_password == "admin123":
-    if st.button("📄 Download Results as PDF"):
-        pdf_buffer = create_pdf(
-            st.session_state["match_id"],
-            st.session_state["action1"], st.session_state["action2"], st.session_state["period1_payoff"],
-            st.session_state["action1_2"], st.session_state["action2_2"], st.session_state["payoff2"]
-        )
+# Password protection for admin functions only
+admin_password = st.text_input("Admin Password (for database management):", type="password")
 
-        b64 = base64.b64encode(pdf_buffer.read()).decode()
-        href = f'<a href="data:application/pdf;base64,{b64}" download="game_results_{st.session_state["match_id"]}.pdf">Click here to download PDF</a>'
-        st.markdown(href, unsafe_allow_html=True)
+if admin_password == "admin123":
+    st.header("🔒 Admin Section")
+    
+    # PDF Download for completed games
+    if st.session_state.get("game_complete", False):
+        if st.button("📄 Download Results as PDF"):
+            pdf_buffer = create_pdf(
+                st.session_state["match_id"],
+                st.session_state["action1"], st.session_state["action2"], st.session_state["period1_payoff"],
+                st.session_state["action1_2"], st.session_state["action2_2"], st.session_state["payoff2"]
+            )
+
+            b64 = base64.b64encode(pdf_buffer.read()).decode()
+            href = f'<a href="data:application/pdf;base64,{b64}" download="game_results_{st.session_state["match_id"]}.pdf">Click here to download PDF</a>'
+            st.markdown(href, unsafe_allow_html=True)
+    
+    # Database cleanup
     if st.button("🗑 Delete ALL Game Data"):
         # Delete all game data from Firebase
         db.reference("games").delete()
