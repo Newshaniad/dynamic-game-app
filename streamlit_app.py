@@ -283,21 +283,6 @@ if admin_password == "admin123":
             for player in game["period2"].keys():
                 completed_period2_players.add(player)
     
-    # CRITICAL: Check completion status FIRST before any UI content
-    all_completed = expected_players > 0 and len(completed_period2_players) >= expected_players
-    
-    if all_completed:
-        # All completed - permanently stop auto refresh
-        st.session_state["admin_refresh_stopped"] = True
-        st.success("🎉 ALL PARTICIPANTS COMPLETED! Admin dashboard monitoring has stopped.")
-        st.info("The game is complete. Auto-refresh is now disabled.")
-    elif not st.session_state.get("admin_refresh_stopped", False):
-        # Continue auto-refreshing only if not completed and not manually stopped
-        time.sleep(3)
-        st.rerun()
-    else:
-        st.info("Auto-refresh manually stopped. Game still in progress.")
-    
     # Live Statistics Dashboard
     st.subheader("📊 Live Game Statistics")
     
@@ -484,15 +469,18 @@ if admin_password == "admin123":
         st.warning("⚠ All players, matches, and game history have been permanently removed.")
         st.rerun()
     
-    # Manual refresh button for completed games
+    # Auto-refresh admin dashboard - STOP when all players complete
+    all_completed = expected_players > 0 and len(completed_period2_players) >= expected_players
+    
     if all_completed:
+        # All completed - stop auto refresh permanently
+        st.success("🎉 All participants completed! Admin monitoring complete.")
         if st.button("🔄 Manual Refresh Dashboard"):
             st.rerun()
     else:
-        # Admin can manually stop refresh if needed
-        if st.button("⏸️ Stop Auto-Refresh"):
-            st.session_state["admin_refresh_stopped"] = True
-            st.rerun()
+        # Only auto-refresh if not all completed
+        time.sleep(3)
+        st.rerun()
     
     # Stop here - admin doesn't participate in the game
     st.stop()
