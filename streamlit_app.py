@@ -644,7 +644,7 @@ if name:
             # Check if both players already completed Period 2
             period2_data = game_ref2.get()
             if period2_data and "Player 1" in period2_data and "Player 2" in period2_data:
-                # Both players completed - show final results with BALLOONS! 🎈
+                # Both players completed - show final results first
                 action1_2 = period2_data["Player 1"]["action"]
                 action2_2 = period2_data["Player 2"]["action"]
                 payoff_matrix = {
@@ -653,8 +653,7 @@ if name:
                 }
                 payoff2 = payoff_matrix[action1_2][action2_2]
                 
-                # 🎈 BALLOONS CELEBRATION! 🎈
-                st.balloons()
+                # Show results first
                 st.success(f"🎯 Period 2 Outcome: P1 = {action1_2}, P2 = {action2_2} → Payoffs = {payoff2}")
                 st.markdown("✅ Game Complete! Thanks for playing.")
                 
@@ -683,6 +682,11 @@ if name:
                     st.success("🎉 All players have finished! Results are now available below.")
                     st.info("📊 Scroll down to see the complete game results and charts.")
                     st.session_state["all_games_complete"] = True
+                
+                # 🎈 BALLOONS CELEBRATION after showing results! 🎈
+                if not st.session_state.get("balloons_shown", False):
+                    st.balloons()
+                    st.session_state["balloons_shown"] = True
             else:
                 # Period 2 gameplay
                 existing_action2 = game_ref2.child(role).get()
@@ -779,8 +783,8 @@ for match_id, game_data in all_games.items():
         and "Player 1" in game_data["period2"] and "Player 2" in game_data["period2"]:
             completed_players += 2  # Both players finished
 
-# Auto-refresh for users who haven't seen results yet (but not if they just completed)
-if expected_players > 0 and completed_players >= expected_players and not st.session_state.get("all_games_complete", False):
+# Auto-refresh for users who haven't seen results yet (but stop when all games complete)
+if expected_players > 0 and completed_players < expected_players and not st.session_state.get("all_games_complete", False):
     time.sleep(3)
     st.rerun()
 
