@@ -254,10 +254,23 @@ def create_comprehensive_pdf():
    
 # END PDF
 
-# Password protection for admin functions only
-admin_password = st.text_input("Admin Password (for database management):", type="password")
+# Check for admin access via URL parameter or session state
+admin_mode = st.query_params.get("admin") == "true" or st.session_state.get("admin_authenticated", False)
 
-if admin_password == "admin123":
+if admin_mode:
+    # Admin password protection
+    if not st.session_state.get("admin_authenticated", False):
+        admin_password = st.text_input("Admin Password (for database management):", type="password")
+        if admin_password == "admin123":
+            st.session_state["admin_authenticated"] = True
+            st.rerun()
+        elif admin_password:
+            st.error("❌ Invalid password")
+            st.stop()
+        else:
+            st.stop()
+
+if st.session_state.get("admin_authenticated", False):
     st.header("🔒 Admin Dashboard")
     
     # Get real-time data
@@ -469,10 +482,17 @@ if admin_password == "admin123":
         st.warning("⚠ All players, matches, and game history have been permanently removed.")
         st.rerun()
     
-    # Auto-refresh admin dashboard
-    if st.button("🔄 Refresh Dashboard") or st.session_state.get("auto_refresh_admin", True):
-        time.sleep(3)
-        st.rerun()
+    # Auto-refresh admin dashboard (stop when all players complete)
+    all_completed = expected_players > 0 and len(completed_period2_players) >= expected_players
+    
+    if not all_completed:
+        if st.button("🔄 Refresh Dashboard") or st.session_state.get("auto_refresh_admin", True):
+            time.sleep(3)
+            st.rerun()
+    else:
+        st.success("🎉 All participants completed! Auto-refresh stopped.")
+        if st.button("🔄 Manual Refresh Dashboard"):
+            st.rerun()
     
     # Stop here - admin doesn't participate in the game
     st.stop()
