@@ -469,22 +469,23 @@ if admin_password == "admin123":
         st.warning("⚠ All players, matches, and game history have been permanently removed.")
         st.rerun()
     
-    # Auto-refresh admin dashboard (stop when all players complete)
+    # Check if all participants have finished to control auto-refresh
     all_completed = expected_players > 0 and len(completed_period2_players) >= expected_players
     
-    if not all_completed:
-        # Only auto-refresh if not completed
-        if not st.session_state.get("admin_refresh_stopped", False):
-            time.sleep(3)
-            st.rerun()
-        else:
-            if st.button("🔄 Refresh Dashboard"):
-                st.rerun()
-    else:
-        # All completed - stop auto refresh permanently
+    if all_completed:
+        # All completed - stop auto refresh permanently and show final status
         st.session_state["admin_refresh_stopped"] = True
         st.success("🎉 All participants completed! Dashboard monitoring stopped.")
         if st.button("🔄 Manual Refresh Dashboard"):
+            st.rerun()
+    elif not st.session_state.get("admin_refresh_stopped", False):
+        # Only auto-refresh if not all completed and refresh not manually stopped
+        time.sleep(3)
+        st.rerun()
+    else:
+        # Admin manually stopped refresh but game not complete
+        if st.button("🔄 Resume Auto-Refresh"):
+            st.session_state["admin_refresh_stopped"] = False
             st.rerun()
     
     # Stop here - admin doesn't participate in the game
@@ -729,99 +730,70 @@ if name:
                         st.rerun()
 
 
-# PAGE RESULTS START
-
-# Enhanced chart function with improved styling
-def plot_enhanced_percentage_bar(choices, labels, title, player_type):
-    if len(choices) > 0:
-        counts = pd.Series(choices).value_counts(normalize=True).reindex(labels, fill_value=0) * 100
-        
-        # Create figure with enhanced styling
-        fig, ax = plt.subplots(figsize=(10, 6))
-        fig.patch.set_facecolor('#f0f0f0')
-        ax.set_facecolor('#e0e0e0')
-        
-        # Color scheme based on player type
-        colors_p1 = ['#1f77b4', '#ff7f0e'] if player_type == "P1" else ['#1f77b4', '#ff7f0e', '#2ca02c']
-        
-        # Create bar plot with enhanced styling
-        bars = counts.plot(kind='bar', ax=ax, color=colors_p1, linewidth=2, width=0.7)
-        
-        # Enhanced styling
-        ax.set_title(title, fontsize=16, fontweight='bold', pad=20)
-        ax.set_ylabel("Percentage (%)", fontsize=14)
-        ax.set_xlabel("Choice", fontsize=14)
-        ax.tick_params(rotation=0, labelsize=12)
-        ax.set_ylim(0, max(100, counts.max() * 1.1))
-        
-        # Add grid for better readability
-        ax.grid(True, alpha=0.3, linestyle='-', linewidth=0.5)
-        
-        # Add value labels on bars
-        for i, bar in enumerate(ax.patches):
-            height = bar.get_height()
-            ax.text(bar.get_x() + bar.get_width()/2., height + 1,
-                   f'{height:.1f}%', ha='center', va='bottom', fontsize=12, fontweight='bold')
-        
-        # Add sample size info
-        ax.text(0.02, 0.98, f"Sample size: {len(choices)} participants", 
-               transform=ax.transAxes, fontsize=10, verticalalignment='top', alpha=0.7,
-               bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.8))
-        
-        # Add current date
-        today = datetime.today().strftime('%B %d, %Y')
-        ax.text(0.98, 0.98, f"Generated: {today}", transform=ax.transAxes, 
-               fontsize=10, verticalalignment='top', horizontalalignment='right', alpha=0.7)
-        
-        plt.tight_layout()
-        st.pyplot(fig)
-    else:
-        st.warning(f"⚠ No data available for {title}")
-
-# Public Game Summary (visible to everyone except admin)
-st.header("📊 Game Summary")
-
-# Get expected number of players from Firebase (set by admin)
-expected_players_ref = db.reference("expected_players")
-expected_players = expected_players_ref.get() or 0
-
-# Fetch all players and all matches
-players = db.reference("players").get() or {}
-matches = db.reference("matches").get() or {}
-all_games = db.reference("games").get() or {}
-
-# Determine how many players are in completed matches
-completed_players = 0
-
-for match_id, game_data in all_games.items():
-    if "period1" in game_data and "period2" in game_data:
-        if "Player 1" in game_data["period1"] and "Player 2" in game_data["period1"] \
-        and "Player 1" in game_data["period2"] and "Player 2" in game_data["period2"]:
-            completed_players += 2  # Both players finished
-
-# Auto-refresh for users who haven't seen results yet (but stop when all games complete)
-# Only refresh if: 1) not all players completed, 2) results not already shown, 3) not manually stopped
-should_auto_refresh = (
-    expected_players > 0 and 
-    completed_players < expected_players and 
-    not st.session_state.get("all_games_complete", False) and
-    not st.session_state.get("results_refresh_stopped", False)
-)
-
-if should_auto_refresh:
-    time.sleep(3)
-    st.rerun()
-
-# Show graph ONLY if all expected players completed both periods OR player just finished
-show_results_now = (
-    (expected_players > 0 and completed_players >= expected_players) or
-    st.session_state.get("show_immediate_results", False)
-)
-
-if show_results_now:
-    # Stop auto-refresh permanently when showing results
-    st.session_state["results_refresh_stopped"] = True
+# SHOW GAME SUMMARY ONLY AFTER PERIOD 2 COMPLETION
+if st.session_state.get("show_immediate_results", False):
     
+    # Enhanced chart function with improved styling
+    def plot_enhanced_percentage_bar(choices, labels, title, player_type):
+        if len(choices) > 0:
+            counts = pd.Series(choices).value_counts(normalize=True).reindex(labels, fill_value=0) * 100
+            
+            # Create figure with enhanced styling
+            fig, ax = plt.subplots(figsize=(10, 6))
+            fig.patch.set_facecolor('#f0f0f0')
+            ax.set_facecolor('#e0e0e0')
+            
+            # Color scheme based on player type
+            colors_p1 = ['#1f77b4', '#ff7f0e'] if player_type == "P1" else ['#1f77b4', '#ff7f0e', '#2ca02c']
+            
+            # Create bar plot with enhanced styling
+            bars = counts.plot(kind='bar', ax=ax, color=colors_p1, linewidth=2, width=0.7)
+            
+            # Enhanced styling
+            ax.set_title(title, fontsize=16, fontweight='bold', pad=20)
+            ax.set_ylabel("Percentage (%)", fontsize=14)
+            ax.set_xlabel("Choice", fontsize=14)
+            ax.tick_params(rotation=0, labelsize=12)
+            ax.set_ylim(0, max(100, counts.max() * 1.1))
+            
+            # Add grid for better readability
+            ax.grid(True, alpha=0.3, linestyle='-', linewidth=0.5)
+            
+            # Add value labels on bars
+            for i, bar in enumerate(ax.patches):
+                height = bar.get_height()
+                ax.text(bar.get_x() + bar.get_width()/2., height + 1,
+                       f'{height:.1f}%', ha='center', va='bottom', fontsize=12, fontweight='bold')
+            
+            # Add sample size info
+            ax.text(0.02, 0.98, f"Sample size: {len(choices)} participants", 
+                   transform=ax.transAxes, fontsize=10, verticalalignment='top', alpha=0.7,
+                   bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.8))
+            
+            # Add current date
+            today = datetime.today().strftime('%B %d, %Y')
+            ax.text(0.98, 0.98, f"Generated: {today}", transform=ax.transAxes, 
+                   fontsize=10, verticalalignment='top', horizontalalignment='right', alpha=0.7)
+            
+            plt.tight_layout()
+            st.pyplot(fig)
+        else:
+            st.warning(f"⚠ No data available for {title}")
+
+    st.header("📊 Game Summary - Your Results!")
+
+    # Get current game data
+    all_games = db.reference("games").get() or {}
+    expected_players = db.reference("expected_players").get() or 0
+    
+    # Count completed players for status
+    completed_players = 0
+    for match_id, game_data in all_games.items():
+        if "period1" in game_data and "period2" in game_data:
+            if "Player 1" in game_data["period1"] and "Player 2" in game_data["period1"] \
+            and "Player 1" in game_data["period2"] and "Player 2" in game_data["period2"]:
+                completed_players += 2
+
     if expected_players > 0 and completed_players >= expected_players:
         st.success(f"✅ All {expected_players} players completed both rounds. Final results:")
     else:
@@ -860,33 +832,5 @@ if show_results_now:
     with col4:
         plot_enhanced_percentage_bar(p2_choices_r2, ["X", "Y", "Z"], "Player 2 Choices (Period 2)", "P2")
 
-elif expected_players > 0:
-    st.info(f"⏳ Waiting for all participants to finish... ({completed_players}/{expected_players} players completed)")
-else:
-    st.info("📈 Admin needs to set the expected number of players to display results.")
-
-# PAGE RESULTS END
-
-# Refresh Results Button (available to all users)
-st.subheader("🔄 Refresh Results")
-if st.button("🔄 Check for Updated Results"):
-    # Re-fetch data from Firebase
-    fresh_expected_players = db.reference("expected_players").get() or 0
-    fresh_all_games = db.reference("games").get() or {}
-    
-    # Recount completed players
-    fresh_completed_players = 0
-    for match_id, game_data in fresh_all_games.items():
-        if "period1" in game_data and "period2" in game_data:
-            if "Player 1" in game_data["period1"] and "Player 2" in game_data["period1"] \
-            and "Player 1" in game_data["period2"] and "Player 2" in game_data["period2"]:
-                fresh_completed_players += 2
-    
-    # Check if all players have finished
-    if fresh_expected_players > 0 and fresh_completed_players >= fresh_expected_players:
-        st.success(f"✅ All {fresh_expected_players} players have completed! Refreshing results...")
-        st.rerun()  # Refresh the page to show updated results
-    elif fresh_expected_players > 0:
-        st.info(f"⏳ Still waiting... ({fresh_completed_players}/{fresh_expected_players} players completed)")
-    else:
-        st.warning("⚠ Admin needs to set the expected number of players first.")
+    st.markdown("---")
+    st.markdown("🎮 **Thank you for participating in the 2-Period Dynamic Game!**")
