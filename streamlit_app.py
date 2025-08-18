@@ -8,6 +8,9 @@ from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 from io import BytesIO
 import base64
+import matplotlib.pyplot as plt
+import pandas as pd
+from datetime import datetime
 
 st.set_page_config(page_title="🎲 2-Period Dynamic Game")
 
@@ -150,16 +153,43 @@ def create_comprehensive_pdf():
     # Create temporary directory for chart images
     temp_dir = tempfile.mkdtemp()
     
-    def create_chart(choices, labels, title, filename):
+    def create_enhanced_chart(choices, labels, title, filename, player_type):
         if len(choices) > 0:
             import pandas as pd
             counts = pd.Series(choices).value_counts(normalize=True).reindex(labels, fill_value=0) * 100
-            fig, ax = plt.subplots(figsize=(8, 6))
-            counts.plot(kind='bar', ax=ax, color=['#1f77b4', '#ff7f0e', '#2ca02c'])
-            ax.set_title(title, fontsize=16, fontweight='bold')
-            ax.set_ylabel("Percentage (%)", fontsize=12)
-            ax.set_xlabel("Choice", fontsize=12)
+            
+            # Create figure with enhanced styling
+            fig, ax = plt.subplots(figsize=(10, 6))
+            fig.patch.set_facecolor('#f0f0f0')
+            ax.set_facecolor('#e0e0e0')
+            
+            # Color scheme
+            colors_p1 = ['#1f77b4', '#ff7f0e'] if player_type == "P1" else ['#1f77b4', '#ff7f0e', '#2ca02c']
+            
+            # Create bar plot
+            bars = counts.plot(kind='bar', ax=ax, color=colors_p1, linewidth=2)
+            
+            # Enhanced styling
+            ax.set_title(title, fontsize=16, fontweight='bold', pad=20)
+            ax.set_ylabel("Percentage (%)", fontsize=14)
+            ax.set_xlabel("Choice", fontsize=14)
             ax.tick_params(rotation=0)
+            ax.set_ylim(0, max(100, counts.max() * 1.1))
+            
+            # Add grid
+            ax.grid(True, alpha=0.3, linestyle='-', linewidth=0.5)
+            
+            # Add value labels on bars
+            for i, bar in enumerate(ax.patches):
+                height = bar.get_height()
+                ax.text(bar.get_x() + bar.get_width()/2., height + 1,
+                       f'{height:.1f}%', ha='center', va='bottom', fontsize=12, fontweight='bold')
+            
+            # Add date
+            today = datetime.today().strftime('%B %d, %Y')
+            ax.text(0.02, 0.98, f"Generated: {today}", transform=ax.transAxes, 
+                   fontsize=10, verticalalignment='top', alpha=0.7)
+            
             plt.tight_layout()
             filepath = os.path.join(temp_dir, filename)
             plt.savefig(filepath, dpi=300, bbox_inches='tight')
@@ -167,16 +197,16 @@ def create_comprehensive_pdf():
             return filepath
         return None
     
-    # Generate charts
+    # Generate enhanced charts
     chart_files = []
     if p1_choices_r1:
-        chart_files.append(create_chart(p1_choices_r1, ["A", "B"], "Player 1 Choices (Round 1)", "p1_r1.png"))
+        chart_files.append(create_enhanced_chart(p1_choices_r1, ["A", "B"], "Player 1 Choices (Period 1)", "p1_r1.png", "P1"))
     if p2_choices_r1:
-        chart_files.append(create_chart(p2_choices_r1, ["X", "Y", "Z"], "Player 2 Choices (Round 1)", "p2_r1.png"))
+        chart_files.append(create_enhanced_chart(p2_choices_r1, ["X", "Y", "Z"], "Player 2 Choices (Period 1)", "p2_r1.png", "P2"))
     if p1_choices_r2:
-        chart_files.append(create_chart(p1_choices_r2, ["A", "B"], "Player 1 Choices (Round 2)", "p1_r2.png"))
+        chart_files.append(create_enhanced_chart(p1_choices_r2, ["A", "B"], "Player 1 Choices (Period 2)", "p1_r2.png", "P1"))
     if p2_choices_r2:
-        chart_files.append(create_chart(p2_choices_r2, ["X", "Y", "Z"], "Player 2 Choices (Round 2)", "p2_r2.png"))
+        chart_files.append(create_enhanced_chart(p2_choices_r2, ["X", "Y", "Z"], "Player 2 Choices (Period 2)", "p2_r2.png", "P2"))
     
     # Add charts to PDF
     for chart_file in chart_files:
@@ -228,10 +258,172 @@ def create_comprehensive_pdf():
 admin_password = st.text_input("Admin Password (for database management):", type="password")
 
 if admin_password == "admin123":
-    st.header("🔒 Admin Section")
+    st.header("🔒 Admin Dashboard")
     
-    # Set expected number of players
-    st.subheader("👥 Game Configuration")
+    # Get real-time data
+    all_players = db.reference("players").get() or {}
+    all_matches = db.reference("matches").get() or {}
+    all_games = db.reference("games").get() or {}
+    expected_players = db.reference("expected_players").get() or 0
+    
+    # Calculate participation statistics
+    total_registered = len(all_players)
+    matched_players = set()
+    for match in all_matches.values():
+        matched_players.update(match.get("players", []))
+    
+    completed_period1_players = set()
+    completed_period2_players = set()
+    
+    for game in all_games.values():
+        if "period1" in game:
+            for player in game["period1"].keys():
+                completed_period1_players.add(player)
+        if "period2" in game:
+            for player in game["period2"].keys():
+                completed_period2_players.add(player)
+    
+    # Live Statistics Dashboard
+    st.subheader("📊 Live Game Statistics")
+    
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Expected Players", expected_players)
+    with col2:
+        st.metric("Registered Players", total_registered)
+    with col3:
+        st.metric("Matched Players", len(matched_players))
+    with col4:
+        st.metric("Completed Period 2", len(completed_period2_players))
+    
+    # Participation Progress Bar
+    if expected_players > 0:
+        progress_percentage = min(len(completed_period2_players) / expected_players, 1.0)
+        st.progress(progress_percentage)
+        st.write(f"Progress: {len(completed_period2_players)}/{expected_players} players completed ({progress_percentage*100:.1f}%)")
+    
+    # Live Player Activity Monitoring
+    st.subheader("👥 Player Activity Monitor")
+    
+    if all_players:
+        player_status = []
+        for player_name in all_players.keys():
+            status = "🔴 Registered"
+            current_activity = "Waiting to be matched"
+            
+            if player_name in matched_players:
+                status = "🟡 Matched"
+                current_activity = "Matched with partner"
+                
+            if player_name in completed_period1_players:
+                status = "🔵 Period 1 Done"
+                current_activity = "Completed Period 1"
+                
+            if player_name in completed_period2_players:
+                status = "🟢 Completed"
+                current_activity = "Game finished"
+            
+            player_status.append({
+                "Player Name": player_name,
+                "Status": status,
+                "Activity": current_activity
+            })
+        
+        # Display as a table
+        if player_status:
+            status_df = pd.DataFrame(player_status)
+            st.dataframe(status_df, use_container_width=True)
+    else:
+        st.info("No players registered yet.")
+    
+    # Live Choice Analytics
+    st.subheader("📈 Live Choice Analytics")
+    
+    if all_games:
+        # Collect choice data for Period 1
+        p1_choices_r1, p2_choices_r1 = [], []
+        p1_choices_r2, p2_choices_r2 = [], []
+        
+        for match in all_games.values():
+            if "period1" in match:
+                p1_action = match["period1"].get("Player 1", {}).get("action")
+                p2_action = match["period1"].get("Player 2", {}).get("action")
+                if p1_action: p1_choices_r1.append(p1_action)
+                if p2_action: p2_choices_r1.append(p2_action)
+            if "period2" in match:
+                p1_action = match["period2"].get("Player 1", {}).get("action")
+                p2_action = match["period2"].get("Player 2", {}).get("action")
+                if p1_action: p1_choices_r2.append(p1_action)
+                if p2_action: p2_choices_r2.append(p2_action)
+        
+        # Enhanced admin charts function
+        def plot_admin_chart(choices, labels, title, player_type):
+            if len(choices) > 0:
+                counts = pd.Series(choices).value_counts(normalize=True).reindex(labels, fill_value=0) * 100
+                
+                fig, ax = plt.subplots(figsize=(8, 5))
+                fig.patch.set_facecolor('#f8f9fa')
+                ax.set_facecolor('#ffffff')
+                
+                colors_scheme = ['#e74c3c', '#3498db'] if player_type == "P1" else ['#e74c3c', '#3498db', '#2ecc71']
+                
+                bars = counts.plot(kind='bar', ax=ax, color=colors_scheme, linewidth=2, width=0.6)
+                
+                ax.set_title(title, fontsize=14, fontweight='bold', pad=15)
+                ax.set_ylabel("Percentage (%)", fontsize=12)
+                ax.set_xlabel("Choice", fontsize=12)
+                ax.tick_params(rotation=0, labelsize=10)
+                ax.set_ylim(0, max(100, counts.max() * 1.1))
+                
+                ax.grid(True, alpha=0.2, linestyle='-', linewidth=0.5)
+                
+                # Add value labels
+                for i, bar in enumerate(ax.patches):
+                    height = bar.get_height()
+                    ax.text(bar.get_x() + bar.get_width()/2., height + 2,
+                           f'{height:.1f}%', ha='center', va='bottom', fontsize=10, fontweight='bold')
+                
+                # Add sample info
+                ax.text(0.02, 0.95, f"n={len(choices)}", transform=ax.transAxes, 
+                       fontsize=9, bbox=dict(boxstyle='round,pad=0.3', facecolor='lightgray', alpha=0.7))
+                
+                plt.tight_layout()
+                return fig
+            else:
+                # Create empty chart
+                fig, ax = plt.subplots(figsize=(8, 5))
+                ax.text(0.5, 0.5, f'No data yet for {title}', ha='center', va='center', 
+                       fontsize=12, transform=ax.transAxes)
+                ax.set_title(title, fontsize=14, fontweight='bold')
+                return fig
+        
+        # Period 1 Charts
+        st.markdown("**Period 1 Choices**")
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            fig1 = plot_admin_chart(p1_choices_r1, ["A", "B"], "Player 1 Choices (Period 1)", "P1")
+            st.pyplot(fig1)
+            
+        with col2:
+            fig2 = plot_admin_chart(p2_choices_r1, ["X", "Y", "Z"], "Player 2 Choices (Period 1)", "P2")
+            st.pyplot(fig2)
+        
+        # Period 2 Charts
+        if p1_choices_r2 or p2_choices_r2:
+            st.markdown("**Period 2 Choices**")
+            col3, col4 = st.columns(2)
+            
+            with col3:
+                fig3 = plot_admin_chart(p1_choices_r2, ["A", "B"], "Player 1 Choices (Period 2)", "P1")
+                st.pyplot(fig3)
+                
+            with col4:
+                fig4 = plot_admin_chart(p2_choices_r2, ["X", "Y", "Z"], "Player 2 Choices (Period 2)", "P2")
+                st.pyplot(fig4)
+    
+    # Game Configuration
+    st.subheader("⚙️ Game Configuration")
     current_expected = db.reference("expected_players").get() or 0
     st.write(f"Current expected players: {current_expected}")
     
@@ -248,14 +440,16 @@ if admin_password == "admin123":
         if new_expected_players % 2 == 0:  # Must be even for pairing
             db.reference("expected_players").set(new_expected_players)
             st.success(f"✅ Expected players set to {new_expected_players}")
+            st.rerun()
         else:
             st.error("⚠ Number of players must be even (for pairing)")
     
+    # Game Management
     st.subheader("📄 Game Management")
     
-    # PDF Download - Comprehensive report with all games and charts
+    # PDF Download
     if st.button("📄 Download Complete Game Report (PDF)"):
-        with st.spinner("Generating comprehensive PDF report with all game data and charts..."):
+        with st.spinner("Generating comprehensive PDF report..."):
             try:
                 pdf_buffer = create_comprehensive_pdf()
                 b64 = base64.b64encode(pdf_buffer.read()).decode()
@@ -264,21 +458,29 @@ if admin_password == "admin123":
                 st.success("✅ Complete game report generated successfully!")
             except Exception as e:
                 st.error(f"Error generating PDF: {str(e)}")
-                st.info("Please ensure all required libraries are installed.")
     
     # Database cleanup
     if st.button("🗑 Delete ALL Game Data"):
-        # Delete all game data from Firebase
         db.reference("games").delete()
         db.reference("matches").delete()
         db.reference("players").delete()
         db.reference("expected_players").set(0)
         st.success("🧹 ALL game data deleted from Firebase.")
         st.warning("⚠ All players, matches, and game history have been permanently removed.")
+        st.rerun()
+    
+    # Auto-refresh admin dashboard
+    if st.button("🔄 Refresh Dashboard") or st.session_state.get("auto_refresh_admin", True):
+        time.sleep(3)
+        st.rerun()
+    
+    # Stop here - admin doesn't participate in the game
+    st.stop()
 
-
+# Check if expected players is set
 if (db.reference("expected_players").get() or 0) <= 0:
-    exit()
+    st.info("⚠️ Game not configured yet. Admin needs to set expected number of players.")
+    st.stop()
 
 # Initialize variables to avoid undefined errors
 already_matched = False
@@ -376,51 +578,49 @@ if name:
         role = role if already_matched else ("Player 1" if pair[0] == name else "Player 2")
         game_ref = db.reference(f"games/{match_id}/period1")
 
-        # Display available choices
-        st.subheader("🎮 Period 1: Make Your Choice")
-        
-        existing_action = game_ref.child(role).get()
-        if existing_action:
-            st.info(f"✅ You already submitted: {existing_action['action']}")
+        # Check if both players already completed Period 1
+        period1_data = game_ref.get()
+        if period1_data and "Player 1" in period1_data and "Player 2" in period1_data:
+            # Both players have submitted - show results and automatically go to Period 2
+            action1 = period1_data["Player 1"]["action"]
+            action2 = period1_data["Player 2"]["action"]
+            payoff_matrix = {
+                "A": {"X": (4, 3), "Y": (0, 0), "Z": (1, 4)},
+                "B": {"X": (0, 0), "Y": (2, 1), "Z": (0, 0)}
+            }
+            payoff = payoff_matrix[action1][action2]
+            st.success(f"🎯 Period 1 Outcome: P1 = {action1}, P2 = {action2} → Payoffs = {payoff}")
+            
+            # Automatically set flag to go to Period 2
+            st.session_state["go_to_period2"] = True
         else:
-            if role == "Player 1":
-                choice = st.radio("Choose your action:", ["A", "B"])
+            # Display available choices for Period 1
+            st.subheader("🎮 Period 1: Make Your Choice")
+            
+            existing_action = game_ref.child(role).get()
+            if existing_action:
+                st.info(f"✅ You already submitted: {existing_action['action']}")
+                st.info("⏳ Waiting for the other player to submit...")
+                
+                # Auto-refresh to check for other player's submission
+                time.sleep(2)
+                st.rerun()
             else:
-                choice = st.radio("Choose your action:", ["X", "Y", "Z"])
+                if role == "Player 1":
+                    choice = st.radio("Choose your action:", ["A", "B"])
+                else:
+                    choice = st.radio("Choose your action:", ["X", "Y", "Z"])
 
-            if st.button("Submit Choice"):
-                game_ref.child(role).set({
-                    "action": choice,
-                    "timestamp": time.time()
-                })
-                st.success("✅ Your choice has been submitted!")
-        
-        # Wait for both players to submit
-        with st.spinner("⏳ Waiting for the other player to submit their action..."):
-            max_wait = 10  # seconds
-            for _ in range(max_wait):
-                submitted = game_ref.get()
-                if submitted and "Player 1" in submitted and "Player 2" in submitted:
-                    action1 = submitted["Player 1"]["action"]
-                    action2 = submitted["Player 2"]["action"]
+                if st.button("Submit Choice"):
+                    game_ref.child(role).set({
+                        "action": choice,
+                        "timestamp": time.time()
+                    })
+                    st.success("✅ Your choice has been submitted!")
+                    time.sleep(1)
+                    st.rerun()
 
-                    payoff_matrix = {
-                        "A": {"X": (4, 3), "Y": (0, 0), "Z": (1, 4)},
-                        "B": {"X": (0, 0), "Y": (2, 1), "Z": (0, 0)}
-                    }
-                    payoff = payoff_matrix[action1][action2]
-
-                    st.success(f"🎯 Period 1 Outcome: P1 = {action1}, P2 = {action2} → Payoffs = {payoff}")
-
-                    if st.button("▶ Continue to Period 2"):
-                        st.session_state["go_to_period2"] = True
-                        st.rerun()
-                    break
-                time.sleep(1)
-            else:
-                st.warning("⌛ The other player hasn't submitted yet. Please wait a bit more and refresh.")
-
-        # ✅ Period 2 logic (if "Continue to Period 2" was clicked or auto-triggered)
+        # ✅ Period 2 logic (automatically triggered after Period 1 completes)
         if st.session_state.get("go_to_period2", False):
             st.subheader("🔁 Period 2: Make Your Choice (Knowing Period 1 Outcome)")
 
@@ -438,95 +638,127 @@ if name:
                 period1_payoff = payoff_matrix[action1][action2]
                 st.info(f"📢 In Period 1: P1 = {action1}, P2 = {action2} → Payoffs = {period1_payoff}")
 
-            # Let players choose again
+            # Let players choose again for Period 2
             game_ref2 = db.reference(f"games/{match_id}/period2")
 
-            existing_action2 = game_ref2.child(role).get()
-            if existing_action2:
-                st.info(f"✅ You already submitted: {existing_action2['action']}")
+            # Check if both players already completed Period 2
+            period2_data = game_ref2.get()
+            if period2_data and "Player 1" in period2_data and "Player 2" in period2_data:
+                # Both players completed - show final results with BALLOONS! 🎈
+                action1_2 = period2_data["Player 1"]["action"]
+                action2_2 = period2_data["Player 2"]["action"]
+                payoff_matrix = {
+                    "A": {"X": (4, 3), "Y": (0, 0), "Z": (1, 4)},
+                    "B": {"X": (0, 0), "Y": (2, 1), "Z": (0, 0)}
+                }
+                payoff2 = payoff_matrix[action1_2][action2_2]
+                
+                # 🎈 BALLOONS CELEBRATION! 🎈
+                st.balloons()
+                st.success(f"🎯 Period 2 Outcome: P1 = {action1_2}, P2 = {action2_2} → Payoffs = {payoff2}")
+                st.markdown("✅ Game Complete! Thanks for playing.")
+                
+                # Initialize variables for PDF functionality
+                st.session_state["game_complete"] = True
+                st.session_state["match_id"] = match_id
+                st.session_state["action1"] = action1
+                st.session_state["action2"] = action2
+                st.session_state["period1_payoff"] = period1_payoff
+                st.session_state["action1_2"] = action1_2
+                st.session_state["action2_2"] = action2_2
+                st.session_state["payoff2"] = payoff2
+                st.session_state["pair"] = pair
+                
+                # Check if all players finished
+                expected_players = db.reference("expected_players").get() or 0
+                all_games_check = db.reference("games").get() or {}
+                completed_check = 0
+                for mid, gdata in all_games_check.items():
+                    if "period1" in gdata and "period2" in gdata:
+                        if "Player 1" in gdata["period1"] and "Player 2" in gdata["period1"] \
+                        and "Player 1" in gdata["period2"] and "Player 2" in gdata["period2"]:
+                            completed_check += 2
+                
+                if expected_players > 0 and completed_check >= expected_players:
+                    st.success("🎉 All players have finished! Results are now available below.")
+                    st.info("📊 Scroll down to see the complete game results and charts.")
+                    st.session_state["all_games_complete"] = True
             else:
-                if role == "Player 1":
-                    choice2 = st.radio("Choose your Period 2 action:", ["A", "B"], key="p1_period2")
-                else:
-                    choice2 = st.radio("Choose your Period 2 action:", ["X", "Y", "Z"], key="p2_period2")
-
-                if st.button("Submit Period 2 Choice"):
-                    game_ref2.child(role).set({
-                        "action": choice2,
-                        "timestamp": time.time()
-                    })
-                    st.success("✅ Your Period 2 choice has been submitted!")
-
-            # Wait for both submissions
-            # Period 2: Wait for both players to submit
-            with st.spinner("⏳ Waiting for the other player to submit their action in Period 2..."):
-                max_wait = 10  # seconds
-                for _ in range(max_wait):
-                    submitted2 = game_ref2.get()
-                    if submitted2 and "Player 1" in submitted2 and "Player 2" in submitted2:
-                        action1_2 = submitted2["Player 1"]["action"]
-                        action2_2 = submitted2["Player 2"]["action"]
-
-                        payoff_matrix = {
-                            "A": {"X": (4, 3), "Y": (0, 0), "Z": (1, 4)},
-                            "B": {"X": (0, 0), "Y": (2, 1), "Z": (0, 0)}
-                        }
-                        payoff2 = payoff_matrix[action1_2][action2_2]
-
-                        st.success(f"🎯 Period 2 Outcome: P1 = {action1_2}, P2 = {action2_2} → Payoffs = {payoff2}")
-                        st.balloons()
-                        st.markdown("✅ Game Complete! Thanks for playing.")
-                        
-                        # Initialize variables for PDF functionality  
-                        st.session_state["game_complete"] = True
-                        st.session_state["match_id"] = match_id
-                        st.session_state["action1"] = action1
-                        st.session_state["action2"] = action2
-                        st.session_state["period1_payoff"] = period1_payoff
-                        st.session_state["action1_2"] = action1_2
-                        st.session_state["action2_2"] = action2_2
-                        st.session_state["payoff2"] = payoff2
-                        st.session_state["pair"] = pair
-                        
-                        # Check if all players have finished and trigger rerun for results display
-                        expected_players = db.reference("expected_players").get() or 0
-                        all_games_check = db.reference("games").get() or {}
-                        completed_check = 0
-                        for mid, gdata in all_games_check.items():
-                            if "period1" in gdata and "period2" in gdata:
-                                if "Player 1" in gdata["period1"] and "Player 2" in gdata["period1"] \
-                                and "Player 1" in gdata["period2"] and "Player 2" in gdata["period2"]:
-                                    completed_check += 2
-                        
-                        if expected_players > 0 and completed_check >= expected_players:
-                            st.success("🎉 All players have finished! Results are now available below.")
-                            st.info("📊 Scroll down to see the complete game results and charts.")
-                            # Set a flag instead of immediate rerun to avoid infinite loops
-                            st.session_state["all_games_complete"] = True
-                        break
-                    time.sleep(1)
-                else:
-                    st.warning("⌛ The other player hasn't submitted their Period 2 action yet. Please wait and refresh.")
-                    st.balloons()
-                    st.markdown("✅ Game Complete! Thanks for playing.")
+                # Period 2 gameplay
+                existing_action2 = game_ref2.child(role).get()
+                if existing_action2:
+                    st.info(f"✅ You already submitted: {existing_action2['action']}")
+                    st.info("⏳ Waiting for the other player to submit their Period 2 action...")
                     
-                    # Initialize variables for PDF functionality
-                    st.session_state["game_complete"] = True
-                    st.session_state["match_id"] = match_id
-                    st.session_state["action1"] = action1
-                    st.session_state["action2"] = action2
-                    st.session_state["period1_payoff"] = period1_payoff
-                    st.session_state["action1_2"] = action1_2
-                    st.session_state["action2_2"] = action2_2
-                    st.session_state["payoff2"] = payoff2
-                    st.session_state["pair"] = pair
+                    # Auto-refresh to check for other player's submission
+                    time.sleep(2)
+                    st.rerun()
+                else:
+                    if role == "Player 1":
+                        choice2 = st.radio("Choose your Period 2 action:", ["A", "B"], key="p1_period2")
+                    else:
+                        choice2 = st.radio("Choose your Period 2 action:", ["X", "Y", "Z"], key="p2_period2")
+
+                    if st.button("Submit Period 2 Choice"):
+                        game_ref2.child(role).set({
+                            "action": choice2,
+                            "timestamp": time.time()
+                        })
+                        st.success("✅ Your Period 2 choice has been submitted!")
+                        time.sleep(1)
+                        st.rerun()
 
 
 # PAGE RESULTS START
-import matplotlib.pyplot as plt
-import pandas as pd
 
-# Public Game Summary (visible to everyone)
+# Enhanced chart function with improved styling
+def plot_enhanced_percentage_bar(choices, labels, title, player_type):
+    if len(choices) > 0:
+        counts = pd.Series(choices).value_counts(normalize=True).reindex(labels, fill_value=0) * 100
+        
+        # Create figure with enhanced styling
+        fig, ax = plt.subplots(figsize=(10, 6))
+        fig.patch.set_facecolor('#f0f0f0')
+        ax.set_facecolor('#e0e0e0')
+        
+        # Color scheme based on player type
+        colors_p1 = ['#1f77b4', '#ff7f0e'] if player_type == "P1" else ['#1f77b4', '#ff7f0e', '#2ca02c']
+        
+        # Create bar plot with enhanced styling
+        bars = counts.plot(kind='bar', ax=ax, color=colors_p1, linewidth=2, width=0.7)
+        
+        # Enhanced styling
+        ax.set_title(title, fontsize=16, fontweight='bold', pad=20)
+        ax.set_ylabel("Percentage (%)", fontsize=14)
+        ax.set_xlabel("Choice", fontsize=14)
+        ax.tick_params(rotation=0, labelsize=12)
+        ax.set_ylim(0, max(100, counts.max() * 1.1))
+        
+        # Add grid for better readability
+        ax.grid(True, alpha=0.3, linestyle='-', linewidth=0.5)
+        
+        # Add value labels on bars
+        for i, bar in enumerate(ax.patches):
+            height = bar.get_height()
+            ax.text(bar.get_x() + bar.get_width()/2., height + 1,
+                   f'{height:.1f}%', ha='center', va='bottom', fontsize=12, fontweight='bold')
+        
+        # Add sample size info
+        ax.text(0.02, 0.98, f"Sample size: {len(choices)} participants", 
+               transform=ax.transAxes, fontsize=10, verticalalignment='top', alpha=0.7,
+               bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.8))
+        
+        # Add current date
+        today = datetime.today().strftime('%B %d, %Y')
+        ax.text(0.98, 0.98, f"Generated: {today}", transform=ax.transAxes, 
+               fontsize=10, verticalalignment='top', horizontalalignment='right', alpha=0.7)
+        
+        plt.tight_layout()
+        st.pyplot(fig)
+    else:
+        st.warning(f"⚠ No data available for {title}")
+
+# Public Game Summary (visible to everyone except admin)
 st.header("📊 Game Summary")
 
 # Get expected number of players from Firebase (set by admin)
@@ -573,32 +805,28 @@ if expected_players > 0 and completed_players >= expected_players:
             if p1: p1_choices_r2.append(p1)
             if p2: p2_choices_r2.append(p2)
 
-    def plot_percentage_bar(choices, labels, title):
-        if len(choices) > 0:
-            counts = pd.Series(choices).value_counts(normalize=True).reindex(labels, fill_value=0) * 100
-            fig, ax = plt.subplots()
-            counts.plot(kind='bar', ax=ax)
-            ax.set_title(title)
-            ax.set_ylabel("Percentage (%)")
-            ax.set_xlabel("Choice")
-            st.pyplot(fig)
-        else:
-            st.write(f"No data available for {title}")
+    st.subheader("🎯 Period 1 Results")
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        plot_enhanced_percentage_bar(p1_choices_r1, ["A", "B"], "Player 1 Choices (Period 1)", "P1")
+    with col2:
+        plot_enhanced_percentage_bar(p2_choices_r1, ["X", "Y", "Z"], "Player 2 Choices (Period 1)", "P2")
 
-    st.subheader("Round 1")
-    plot_percentage_bar(p1_choices_r1, ["A", "B"], "Player 1 Choices (Round 1)")
-    plot_percentage_bar(p2_choices_r1, ["X", "Y", "Z"], "Player 2 Choices (Round 1)")
+    st.subheader("🔄 Period 2 Results")
+    col3, col4 = st.columns(2)
+    
+    with col3:
+        plot_enhanced_percentage_bar(p1_choices_r2, ["A", "B"], "Player 1 Choices (Period 2)", "P1")
+    with col4:
+        plot_enhanced_percentage_bar(p2_choices_r2, ["X", "Y", "Z"], "Player 2 Choices (Period 2)", "P2")
 
-    st.subheader("Round 2")
-    plot_percentage_bar(p1_choices_r2, ["A", "B"], "Player 1 Choices (Round 2)")
-    plot_percentage_bar(p2_choices_r2, ["X", "Y", "Z"], "Player 2 Choices (Round 2)")
 elif expected_players > 0:
     st.info(f"⏳ Waiting for all participants to finish... ({completed_players}/{expected_players} players completed)")
 else:
     st.info("📈 Admin needs to set the expected number of players to display results.")
 
 # PAGE RESULTS END
-
 
 # Refresh Results Button (available to all users)
 st.subheader("🔄 Refresh Results")
