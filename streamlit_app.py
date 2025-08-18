@@ -254,23 +254,10 @@ def create_comprehensive_pdf():
    
 # END PDF
 
-# Check for admin access via URL parameter or session state
-admin_mode = st.query_params.get("admin") == "true" or st.session_state.get("admin_authenticated", False)
+# Password protection for admin functions only
+admin_password = st.text_input("Admin Password (for database management):", type="password")
 
-if admin_mode:
-    # Admin password protection
-    if not st.session_state.get("admin_authenticated", False):
-        admin_password = st.text_input("Admin Password (for database management):", type="password")
-        if admin_password == "admin123":
-            st.session_state["admin_authenticated"] = True
-            st.rerun()
-        elif admin_password:
-            st.error("❌ Invalid password")
-            st.stop()
-        else:
-            st.stop()
-
-if st.session_state.get("admin_authenticated", False):
+if admin_password == "admin123":
     st.header("🔒 Admin Dashboard")
     
     # Get real-time data
