@@ -473,11 +473,17 @@ if admin_password == "admin123":
     all_completed = expected_players > 0 and len(completed_period2_players) >= expected_players
     
     if not all_completed:
-        if st.button("🔄 Refresh Dashboard") or st.session_state.get("auto_refresh_admin", True):
+        # Only auto-refresh if not completed
+        if not st.session_state.get("admin_refresh_stopped", False):
             time.sleep(3)
             st.rerun()
+        else:
+            if st.button("🔄 Refresh Dashboard"):
+                st.rerun()
     else:
-        st.success("🎉 All participants completed! Auto-refresh stopped.")
+        # All completed - stop auto refresh permanently
+        st.session_state["admin_refresh_stopped"] = True
+        st.success("🎉 All participants completed! Dashboard monitoring stopped.")
         if st.button("🔄 Manual Refresh Dashboard"):
             st.rerun()
     
@@ -694,6 +700,9 @@ if name:
                 if not st.session_state.get("balloons_shown", False):
                     st.balloons()
                     st.session_state["balloons_shown"] = True
+                
+                # Show immediate game summary for this player
+                st.session_state["show_immediate_results"] = True
             else:
                 # Period 2 gameplay
                 existing_action2 = game_ref2.child(role).get()
@@ -791,13 +800,32 @@ for match_id, game_data in all_games.items():
             completed_players += 2  # Both players finished
 
 # Auto-refresh for users who haven't seen results yet (but stop when all games complete)
-if expected_players > 0 and completed_players < expected_players and not st.session_state.get("all_games_complete", False):
+# Only refresh if: 1) not all players completed, 2) results not already shown, 3) not manually stopped
+should_auto_refresh = (
+    expected_players > 0 and 
+    completed_players < expected_players and 
+    not st.session_state.get("all_games_complete", False) and
+    not st.session_state.get("results_refresh_stopped", False)
+)
+
+if should_auto_refresh:
     time.sleep(3)
     st.rerun()
 
-# Show graph ONLY if all expected players completed both periods
-if expected_players > 0 and completed_players >= expected_players:
-    st.success(f"✅ All {expected_players} players completed both rounds. Showing results...")
+# Show graph ONLY if all expected players completed both periods OR player just finished
+show_results_now = (
+    (expected_players > 0 and completed_players >= expected_players) or
+    st.session_state.get("show_immediate_results", False)
+)
+
+if show_results_now:
+    # Stop auto-refresh permanently when showing results
+    st.session_state["results_refresh_stopped"] = True
+    
+    if expected_players > 0 and completed_players >= expected_players:
+        st.success(f"✅ All {expected_players} players completed both rounds. Final results:")
+    else:
+        st.success("✅ Your game is complete! Here are the current results:")
 
     p1_choices_r1, p2_choices_r1 = [], []
     p1_choices_r2, p2_choices_r2 = [], []
